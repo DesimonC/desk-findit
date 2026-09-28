@@ -151,7 +151,8 @@
         const img = new Image();
         img.onerror = () => reject(new Error("The photo could not be opened."));
         img.onload = () => {
-          const max = 1000;
+          const max = 800;
+          const quality = 0.60;
           const scale = Math.min(1, max / Math.max(img.width, img.height));
           const canvas = document.createElement("canvas");
           canvas.width = Math.max(1, Math.round(img.width * scale));
@@ -159,13 +160,13 @@
           const ctx = canvas.getContext("2d");
           if (!ctx) return reject(new Error("This device could not prepare the photo."));
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          const processed = canvas.toDataURL("image/jpeg", .70);
+          const processed = canvas.toDataURL("image/jpeg", quality);
           console.log("[FindIt Photos] Processed before upload", {
             originalWidth: img.width,
             originalHeight: img.height,
             uploadWidth: canvas.width,
             uploadHeight: canvas.height,
-            jpegQuality: 0.70,
+            jpegQuality: quality,
             approximatePayloadKB: Math.round(processed.length * 0.75 / 1024)
           });
           resolve(processed);
