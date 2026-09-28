@@ -1,5 +1,8 @@
 /* Find It! V2 - the only Apps Script HTTP client */
 (function () {
+  const GET_MAX_RETRIES = 2;
+  const GET_RETRY_DELAY_MS = 450;
+
   function apiUrl() {
     const url = String(window.FINDIT_CONFIG.apiUrl || "").trim();
     if (!/^https:\/\//i.test(url) || url.includes("PASTE_APPS_SCRIPT")) {
@@ -8,9 +11,24 @@
     return url;
   }
 
-  async function parseResponse(response, action, method, requestUrl) {
+  function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  async function readResponse(response, action, method, requestUrl) {
     const text = await response.text();
     const contentType = response.headers.get("content-type") || "";
+    const details = {
+      action,
+      method,
+      status: response.status,
+      ok: response.ok,
+      contentType,
+      requestUrl,
+      finalUrl: response.url,
+      redirected: response.redirected,
+      text
+    };
     console.log("[FindIt API] RESPONSE", {
       action,
       method,
@@ -21,29 +39,39 @@
       finalUrl: response.url,
       redirected: response.redirected
     });
+    return details;
+  }
+
+  function isTransientEcho404(details) {
+    return details.status === 404 &&
+      /^text\/html\b/i.test(details.contentType) &&
+      /script\.googleusercontent\.com\/macros\/echo/i.test(details.finalUrl || "");
+  }
+
+  function parseDetails(details) {
     let payload;
-    try { payload = JSON.parse(text); }
+    try { payload = JSON.parse(details.text); }
     catch (_) {
       console.error("[FindIt API] INVALID JSON", {
-        action,
-        method,
-        status: response.status,
-        contentType,
-        requestUrl,
-        finalUrl: response.url,
-        redirected: response.redirected,
-        responsePreview: text.slice(0, 800)
+        action: details.action,
+        method: details.method,
+        status: details.status,
+        contentType: details.contentType,
+        requestUrl: details.requestUrl,
+        finalUrl: details.finalUrl,
+        redirected: details.redirected,
+        responsePreview: details.text.slice(0, 800)
       });
-      throw new Error(action + " failed: HTTP " + response.status + " returned " + (contentType || "unknown content type") + ". See console [FindIt API] INVALID JSON details.");
+      throw new Error(details.action + " failed: HTTP " + details.status + " returned " + (details.contentType || "unknown content type") + ". See console [FindIt API] INVALID JSON details.");
     }
     if (!payload || payload.ok !== true) {
       const error = payload && payload.error ? payload.error : {};
-      console.error("[FindIt API] API ERROR", {action, method, status:response.status, error});
+      console.error("[FindIt API] API ERROR", {action:details.action, method:details.method, status:details.status, error});
       const e = new Error(error.message || "Find It API request failed.");
       e.code = error.code || "API_ERROR";
       throw e;
     }
-    console.log("[FindIt API] OK", action);
+    console.log("[FindIt API] OK", details.action);
     return payload.data;
   }
 
@@ -55,13 +83,31 @@
         if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
       });
       const requestUrl = url.toString();
-      console.log("[FindIt API] GET", action, requestUrl);
-      try {
-        const response = await fetch(requestUrl, { method: "GET", redirect: "follow", cache: "no-store" });
-        return await parseResponse(response, action, "GET", requestUrl);
-      } catch (error) {
-        console.error("[FindIt API] GET FAILED", action, error);
-        throw error;
+
+      for (let attempt = 0; attempt <= GET_MAX_RETRIES; attempt++) {
+        console.log("[FindIt API] GET", action, requestUrl, "attempt", attempt + 1);
+        try {
+          const response = await fetch(requestUrl, { method: "GET", redirect: "follow", cache: "no-store" });
+          const details = await readResponse(response, action, "GET", requestUrl);
+
+          if (isTransientEcho404(details) && attempt < GET_MAX_RETRIES) {
+            const waitMs = GET_RETRY_DELAY_MS * (attempt + 1);
+            console.warn("[FindIt API] TRANSIENT ECHO 404 - RETRYING", {
+              action,
+              attempt: attempt + 1,
+              nextAttempt: attempt + 2,
+              waitMs,
+              finalUrl: details.finalUrl
+            });
+            await delay(waitMs);
+            continue;
+          }
+
+          return parseDetails(details);
+        } catch (error) {
+          console.error("[FindIt API] GET FAILED", action, "attempt", attempt + 1, error);
+          throw error;
+        }
       }
     },
 
@@ -77,9 +123,10 @@
           headers: { "Content-Type": "text/plain;charset=utf-8" },
           body: JSON.stringify(Object.assign({ action }, data || {}))
         });
-        return await parseResponse(response, action, "POST", requestUrl);
+        const details = await readResponse(response, action, "POST", requestUrl);
+        return parseDetails(details);
       } catch (error) {
-        console.error("[FindIt API] POST FAILED", action, error);
+        console.error("[FindIt API] POST FAILED - NOT RETRIED", action, error);
         throw error;
       }
     }
