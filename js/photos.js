@@ -21,6 +21,14 @@
     return session && session.gameCode && session.playerId ? session : null;
   }
 
+  function setBusy(value) {
+    busy = !!value;
+    ["takePhotoButton","passChallengeButton","photoBackButton","usePhotoButton","retakeButton","cancelPreviewButton"].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.disabled = busy;
+    });
+  }
+
   function pauseGamePolling() {
     FindItApp.stopPolling();
     log("GAME POLLING PAUSED");
@@ -35,7 +43,6 @@
     stopUploadIndicator();
     selected = challenge;
     photoData = null;
-    busy = false;
     chooserOpen = false;
     pauseGamePolling();
     log("OPEN PHOTO");
@@ -154,7 +161,6 @@
     if (busy) return;
     log("RETAKE");
     pauseGamePolling();
-    /* Keep the old processed photo until a replacement has actually been selected. */
     document.getElementById("photoInput").value = "";
     FindItApp.showMessage("photoMessage", "Choose a replacement photo. Your current photo is kept until you select one.", false);
     choosePhoto();
@@ -188,7 +194,6 @@
     }
 
     pauseGamePolling();
-    busy = true;
     setBusy(true);
     startUploadIndicator();
     log("UPLOAD START", { approximatePayloadKB: Math.round(photoData.length * 0.75 / 1024) });
@@ -203,14 +208,12 @@
 
       log("UPLOAD SUCCESS");
       stopUploadIndicator();
-      busy = false;
       setBusy(false);
       await returnToGame();
     } catch (error) {
       stopUploadIndicator();
       log("UPLOAD FAIL", { error: error && error.message });
       console.warn("[FindIt Photos] Photo upload failed; preserving session, challenge and processed photo.", error);
-      busy = false;
       setBusy(false);
       pauseGamePolling();
       FindItApp.showMessage("photoMessage", "Upload failed. Your photo and game are still here — tap Use Photo to retry.", true);
@@ -227,7 +230,6 @@
     }
 
     pauseGamePolling();
-    busy = true;
     setBusy(true);
     FindItApp.showMessage("photoMessage", "Passing challenge...", false);
     log("PASS START");
@@ -238,12 +240,10 @@
         challengeId: selected.challengeId
       });
       log("PASS SUCCESS");
-      busy = false;
       setBusy(false);
       await returnToGame();
     } catch (error) {
       log("PASS FAIL", { error: error && error.message });
-      busy = false;
       setBusy(false);
       pauseGamePolling();
       FindItApp.showMessage("photoMessage", "Could not pass this challenge. Your game is still active — please try again.", true);
