@@ -1,0 +1,26 @@
+/* Find It! V2 - final results */
+(function(){
+ let loaded=false;
+ async function load(){
+  const s=FindItApp.state.session;if(!s||loaded)return;
+  try{const data=await FindItAPI.get("getResults",{gameCode:s.gameCode,playerId:s.playerId});loaded=true;render(data);}
+  catch(error){FindItApp.showMessage("resultsMessage",error.message,true);}
+ }
+ function render(data){
+  const box=document.getElementById("finalResults");
+  const tied=data.overallWinners.length>1;
+  let html='<div class="winner-hero"><p class="eyebrow">'+(tied?'JOINT WINNERS':'OVERALL WINNER')+'</p><h3>'+data.overallWinners.map(w=>escapeHtml(w.name)).join(' & ')+'</h3><p>'+data.maxChallengeWins+' challenge win'+(data.maxChallengeWins===1?'':'s')+'</p></div>';
+  if(data.challengeResults&&data.challengeResults.length){html+='<div class="result-list"><h3>Challenge winners</h3>'+data.challengeResults.map(c=>'<div class="result-card"><span class="challenge-number">Challenge '+c.challengeNumber+'</span><h4>'+escapeHtml(c.name)+'</h4>'+(c.winners.length?'<div class="winner-photos">'+c.winners.map(w=>'<figure><img src="'+w.photoUrl+'" alt="Winning photo"><figcaption>'+escapeHtml(w.name)+(c.uncontested?' · uncontested':c.winners.length>1?' · joint winner':'')+'</figcaption></figure>').join('')+'</div>':'<p class="hint">No photo submitted.</p>')+'</div>').join('')+'</div>';}
+  box.innerHTML=html;document.getElementById("cleanupGameButton").hidden=!FindItApp.state.session.isHost;
+ }
+ async function cleanup(){
+  const s=FindItApp.state.session;if(!s||!s.isHost)return;
+  if(!window.confirm("Close this game and keep only winner records and winning photos?"))return;
+  const b=document.getElementById("cleanupGameButton");b.disabled=true;
+  try{await FindItAPI.post("cleanupFinishedGame",{gameCode:s.gameCode,playerId:s.playerId});FindItSession.clear();b.hidden=true;document.getElementById("resultsMessage").textContent="Game closed. Winner records and winning photos retained.";}
+  catch(error){FindItApp.showMessage("resultsMessage",error.message,true);b.disabled=false;}
+ }
+ function escapeHtml(v){return String(v||"").replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
+ document.addEventListener("DOMContentLoaded",()=>document.getElementById("cleanupGameButton").addEventListener("click",cleanup));
+ window.FindItResults={load};
+})();
