@@ -72,13 +72,22 @@
         const img = new Image();
         img.onerror = () => reject(new Error("The photo could not be opened."));
         img.onload = () => {
-          const max = 1600;
+          const max = 1000;
           const scale = Math.min(1, max / Math.max(img.width, img.height));
           const canvas = document.createElement("canvas");
           canvas.width = Math.max(1, Math.round(img.width * scale));
           canvas.height = Math.max(1, Math.round(img.height * scale));
           canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
-          resolve(canvas.toDataURL("image/jpeg", .82));
+          const processed = canvas.toDataURL("image/jpeg", .70);
+          console.log("[FindIt Photos] Processed before upload", {
+            originalWidth: img.width,
+            originalHeight: img.height,
+            uploadWidth: canvas.width,
+            uploadHeight: canvas.height,
+            jpegQuality: 0.70,
+            approximatePayloadKB: Math.round(processed.length * 0.75 / 1024)
+          });
+          resolve(processed);
         };
         img.src = reader.result;
       };
