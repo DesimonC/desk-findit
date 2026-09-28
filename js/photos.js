@@ -23,7 +23,7 @@
 
   function setBusy(value) {
     busy = !!value;
-    ["takePhotoButton","passChallengeButton","photoBackButton","usePhotoButton","retakeButton","cancelPreviewButton"].forEach(id => {
+    ["takePhotoButton","choosePhotoButton","passChallengeButton","photoBackButton","usePhotoButton","retakeButton","cancelPreviewButton"].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.disabled = busy;
     });
@@ -39,6 +39,13 @@
     log("GAME POLLING RESUMED");
   }
 
+  function resetInputs() {
+    const cameraInput = document.getElementById("cameraInput");
+    const photoInput = document.getElementById("photoInput");
+    if (cameraInput) cameraInput.value = "";
+    if (photoInput) photoInput.value = "";
+  }
+
   function open(challenge) {
     stopUploadIndicator();
     selected = challenge;
@@ -49,7 +56,7 @@
     document.getElementById("photoChallengeNumber").textContent = "Challenge " + challenge.challengeNumber;
     document.getElementById("photoChallengeName").textContent = challenge.name;
     document.getElementById("photoChallengeDescription").textContent = challenge.description || "";
-    document.getElementById("photoInput").value = "";
+    resetInputs();
     document.getElementById("photoPreview").removeAttribute("src");
     document.getElementById("photoPreviewWrap").hidden = true;
     document.getElementById("photoActions").hidden = false;
@@ -79,26 +86,38 @@
     returnToGame();
   }
 
-  function choosePhoto() {
+  function openPicker(inputId, modeLabel) {
     if (busy || chooserOpen) return;
     if (!validSession()) {
-      FindItApp.showMessage("photoMessage", "Your game session is still on this device, but it is not available to the photo screen. Do not leave this page.", true);
+      FindItApp.showMessage("photoMessage", "Your game session is not available to the photo screen. Keep this page open.", true);
+      return;
+    }
+    const input = document.getElementById(inputId);
+    if (!input) {
+      FindItApp.showMessage("photoMessage", "Photo control is not available on this device.", true);
       return;
     }
     chooserOpen = true;
     pauseGamePolling();
-    log("CAMERA / PHOTO CHOOSER OPEN");
-    const input = document.getElementById("photoInput");
+    log(modeLabel + " OPEN");
     input.value = "";
     input.click();
     window.setTimeout(() => { chooserOpen = false; }, 1500);
+  }
+
+  function takePhoto() {
+    openPicker("cameraInput", "CAMERA");
+  }
+
+  function choosePhoto() {
+    openPicker("photoInput", "PHOTO LIBRARY");
   }
 
   function selectedFile(event) {
     chooserOpen = false;
     const file = event.target.files && event.target.files[0];
     if (!file || busy) {
-      log("CAMERA / PHOTO CHOOSER CLOSED WITHOUT PHOTO");
+      log("PHOTO PICKER CLOSED WITHOUT PHOTO");
       return;
     }
     if (!file.type.startsWith("image/")) {
@@ -161,9 +180,8 @@
     if (busy) return;
     log("RETAKE");
     pauseGamePolling();
-    document.getElementById("photoInput").value = "";
-    FindItApp.showMessage("photoMessage", "Choose a replacement photo. Your current photo is kept until you select one.", false);
-    choosePhoto();
+    FindItApp.showMessage("photoMessage", "Take a replacement photo. Your current photo is kept until a new one is selected.", false);
+    takePhoto();
   }
 
   function startUploadIndicator() {
@@ -262,7 +280,9 @@
   }
 
   document.addEventListener("DOMContentLoaded", () => {
-    document.getElementById("takePhotoButton").addEventListener("click", choosePhoto);
+    document.getElementById("takePhotoButton").addEventListener("click", takePhoto);
+    document.getElementById("choosePhotoButton").addEventListener("click", choosePhoto);
+    document.getElementById("cameraInput").addEventListener("change", selectedFile);
     document.getElementById("photoInput").addEventListener("change", selectedFile);
     document.getElementById("usePhotoButton").addEventListener("click", submit);
     document.getElementById("retakeButton").addEventListener("click", retake);
