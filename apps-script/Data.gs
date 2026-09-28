@@ -1,70 +1,20 @@
 /* Find It! V2 - sheet schema and shared data helpers */
 const FINDIT_SHEETS = Object.freeze({
-  Games: ["GameCode","HostPlayerId","Status","ChallengeCount","CreatedAt","StartedAt","VotingStartedAt","FinishedAt","EndedEarly"],
-  Players: ["PlayerId","GameCode","Name","IsHost","JoinedAt"],
-  Challenges: ["ChallengeId","Name","Description","Active"],
-  GameChallenges: ["GameCode","ChallengeId","ChallengeNumber","Name","Description"],
-  Entries: ["EntryId","GameCode","PlayerId","ChallengeId","ChallengeNumber","Status","PhotoReference","SubmittedAt"],
-  Votes: ["VoteId","GameCode","ChallengeId","VoterPlayerId","EntryId","PhotoOwnerPlayerId","IsSelfVote","VotedAt"],
-  Winners: ["GameCode","Date","WinnerName","ChallengeWins","WinningPhotoReference"]
+  Games:["GameCode","HostPlayerId","Status","ChallengeCount","CreatedAt","StartedAt","VotingStartedAt","FinishedAt","EndedEarly"],
+  Players:["PlayerId","GameCode","Name","IsHost","JoinedAt"],
+  Challenges:["ChallengeId","Name","Description","Active"],
+  GameChallenges:["GameCode","ChallengeId","ChallengeNumber","Name","Description"],
+  Entries:["EntryId","GameCode","PlayerId","ChallengeId","ChallengeNumber","Status","PhotoReference","SubmittedAt"],
+  Votes:["VoteId","GameCode","ChallengeId","VoterPlayerId","EntryId","PhotoOwnerPlayerId","IsSelfVote","VotedAt"],
+  Winners:["GameCode","Date","RecordType","ChallengeNumber","ChallengeName","WinnerPlayerId","WinnerName","ChallengeWins","WinningPhotoReference","IsJointWinner","IsOverallWinner"]
 });
-
-function getFindItSpreadsheet_() {
-  return SpreadsheetApp.getActiveSpreadsheet();
-}
-
-function ensureFindItSheets() {
-  const ss = getFindItSpreadsheet_();
-  Object.keys(FINDIT_SHEETS).forEach(name => {
-    let sheet = ss.getSheetByName(name);
-    if (!sheet) sheet = ss.insertSheet(name);
-    const headers = FINDIT_SHEETS[name];
-    if (sheet.getLastRow() === 0) sheet.getRange(1,1,1,headers.length).setValues([headers]);
-  });
-  return { sheets: Object.keys(FINDIT_SHEETS) };
-}
-
-function sheet_(name) {
-  const sheet = getFindItSpreadsheet_().getSheetByName(name);
-  if (!sheet) throw apiError_("SHEET_MISSING", "Missing sheet: " + name + ". Run ensureFindItSheets() once.");
-  return sheet;
-}
-
-function rowsAsObjects_(name) {
-  const sh = sheet_(name);
-  const values = sh.getDataRange().getValues();
-  if (values.length < 2) return [];
-  const headers = values[0].map(String);
-  return values.slice(1).map((row, i) => {
-    const obj = { _row: i + 2 };
-    headers.forEach((h, j) => obj[h] = row[j]);
-    return obj;
-  });
-}
-
-function appendObject_(name, obj) {
-  const headers = FINDIT_SHEETS[name];
-  sheet_(name).appendRow(headers.map(h => obj[h] !== undefined ? obj[h] : ""));
-}
-
-function findOne_(name, predicate) {
-  const rows = rowsAsObjects_(name);
-  for (let i = 0; i < rows.length; i++) if (predicate(rows[i])) return rows[i];
-  return null;
-}
-
-function updateObjectRow_(name, rowNumber, changes) {
-  const sh = sheet_(name);
-  const headers = FINDIT_SHEETS[name];
-  const current = sh.getRange(rowNumber,1,1,headers.length).getValues()[0];
-  headers.forEach((h,i) => { if (Object.prototype.hasOwnProperty.call(changes,h)) current[i] = changes[h]; });
-  sh.getRange(rowNumber,1,1,headers.length).setValues([current]);
-}
-
-function id_(prefix) {
-  return prefix + Utilities.getUuid().replace(/-/g,"").slice(0,12).toUpperCase();
-}
-
-function bool_(value) {
-  return value === true || String(value).toUpperCase() === "TRUE";
-}
+function getFindItSpreadsheet_(){return SpreadsheetApp.getActiveSpreadsheet();}
+function ensureFindItSheets(){const ss=getFindItSpreadsheet_(),repaired=[];Object.keys(FINDIT_SHEETS).forEach(name=>{let sh=ss.getSheetByName(name);if(!sh)sh=ss.insertSheet(name);const headers=FINDIT_SHEETS[name];if(sh.getLastRow()===0){sh.getRange(1,1,1,headers.length).setValues([headers]);return;}const existing=sh.getRange(1,1,1,Math.max(sh.getLastColumn(),headers.length)).getValues()[0].map(v=>String(v).trim());const exact=headers.every((h,i)=>existing[i]===h)&&existing.slice(headers.length).every(v=>!v);if(!exact){if(sh.getLastRow()>1)throw apiError_("SHEET_SCHEMA_MISMATCH","Sheet "+name+" has data with incompatible headings. Back it up before migrating it to V2.");sh.clear();sh.getRange(1,1,1,headers.length).setValues([headers]);repaired.push(name);}});return {sheets:Object.keys(FINDIT_SHEETS),repaired:repaired};}
+function seedFindItChallenges(){ensureFindItSheets();const sh=sheet_("Challenges");if(rowsAsObjects_("Challenges").length)return {seeded:false,message:"Challenges already exist."};const items=[["Something Red","Find and photograph something mainly red."],["Something Tiny","Find something surprisingly small."],["A Reflection","Capture an interesting reflection."],["Something Old","Find something that looks old or historic."],["A Funny Sign","Find a sign, notice or label that makes you smile."],["Something Round","Find something clearly circular or spherical."],["Nature Close-Up","Take a close-up photo of something natural."],["Something Blue","Find and photograph something mainly blue."],["An Unusual Angle","Make an everyday object look different with your camera angle."],["Something With Numbers","Find numbers somewhere in the world around you."],["A Pattern","Capture an interesting repeated pattern."],["Something Shiny","Find something that reflects or catches the light."]];items.forEach((x,i)=>appendObject_("Challenges",{ChallengeId:"C"+String(i+1).padStart(3,"0"),Name:x[0],Description:x[1],Active:true}));return {seeded:true,count:items.length};}
+function sheet_(name){const sh=getFindItSpreadsheet_().getSheetByName(name);if(!sh)throw apiError_("SHEET_MISSING","Missing sheet: "+name+". Run ensureFindItSheets() once.");return sh;}
+function rowsAsObjects_(name){const sh=sheet_(name),values=sh.getDataRange().getValues();if(values.length<2)return [];const headers=values[0].map(String);return values.slice(1).map((row,i)=>{const obj={_row:i+2};headers.forEach((h,j)=>obj[h]=row[j]);return obj;});}
+function appendObject_(name,obj){const headers=FINDIT_SHEETS[name];sheet_(name).appendRow(headers.map(h=>obj[h]!==undefined?obj[h]:""));}
+function findOne_(name,predicate){const rows=rowsAsObjects_(name);for(let i=0;i<rows.length;i++)if(predicate(rows[i]))return rows[i];return null;}
+function updateObjectRow_(name,rowNumber,changes){const sh=sheet_(name),headers=FINDIT_SHEETS[name],current=sh.getRange(rowNumber,1,1,headers.length).getValues()[0];headers.forEach((h,i)=>{if(Object.prototype.hasOwnProperty.call(changes,h))current[i]=changes[h];});sh.getRange(rowNumber,1,1,headers.length).setValues([current]);}
+function id_(prefix){return prefix+Utilities.getUuid().replace(/-/g,"").slice(0,12).toUpperCase();}
+function bool_(value){return value===true||String(value).toUpperCase()==="TRUE";}
