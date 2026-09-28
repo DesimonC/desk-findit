@@ -4,8 +4,10 @@
   let photoData = null;
   let busy = false;
   let chooserOpen = false;
+  let uploadInProgress = false;
   let uploadTimer = null;
   let uploadStartedAt = 0;
+  let uploadProgress = 0;
 
   function log(stage, extra) {
     console.log("[FindIt Photos] " + stage, Object.assign({
@@ -46,11 +48,30 @@
     if (photoInput) photoInput.value = "";
   }
 
+  function setUploadProgress(percent, text) {
+    const wrap = document.getElementById("uploadProgressWrap");
+    const bar = document.getElementById("uploadProgressBar");
+    const label = document.getElementById("uploadProgressText");
+    if (!wrap || !bar || !label) return;
+    wrap.hidden = false;
+    bar.style.width = Math.max(0, Math.min(100, percent)) + "%";
+    label.textContent = text || (Math.round(percent) + "% uploaded");
+  }
+
+  function hideUploadProgress() {
+    const wrap = document.getElementById("uploadProgressWrap");
+    const bar = document.getElementById("uploadProgressBar");
+    if (wrap) wrap.hidden = true;
+    if (bar) bar.style.width = "0%";
+  }
+
   function open(challenge) {
     stopUploadIndicator();
     selected = challenge;
     photoData = null;
     chooserOpen = false;
+    uploadInProgress = false;
+    hideUploadProgress();
     pauseGamePolling();
     log("OPEN PHOTO");
     document.getElementById("photoChallengeNumber").textContent = "Challenge " + challenge.challengeNumber;
@@ -67,9 +88,10 @@
   }
 
   async function returnToGame() {
-    if (busy) return;
+    if (busy || uploadInProgress) return;
     log("RETURN TO GAME");
     stopUploadIndicator();
+    hideUploadProgress();
     chooserOpen = false;
     selected = null;
     photoData = null;
@@ -82,12 +104,10 @@
     resumeGamePolling();
   }
 
-  function back() {
-    returnToGame();
-  }
+  function back() { returnToGame(); }
 
   function openPicker(inputId, modeLabel) {
-    if (busy || chooserOpen) return;
+    if (busy || chooserOpen || uploadInProgress) return;
     if (!validSession()) {
       FindItApp.showMessage("photoMessage", "Your game session is not available to the photo screen. Keep this page open.", true);
       return;
@@ -105,18 +125,13 @@
     window.setTimeout(() => { chooserOpen = false; }, 1500);
   }
 
-  function takePhoto() {
-    openPicker("cameraInput", "CAMERA");
-  }
-
-  function choosePhoto() {
-    openPicker("photoInput", "PHOTO LIBRARY");
-  }
+  function takePhoto() { openPicker("cameraInput", "CAMERA"); }
+  function choosePhoto() { openPicker("photoInput", "PHOTO LIBRARY"); }
 
   function selectedFile(event) {
     chooserOpen = false;
     const file = event.target.files && event.target.files[0];
-    if (!file || busy) {
+    if (!file || busy || uploadInProgress) {
       log("PHOTO PICKER CLOSED WITHOUT PHOTO");
       return;
     }
@@ -128,15 +143,15 @@
       FindItApp.showMessage("photoMessage", "That photo is too large. Please use a smaller photo.", true);
       return;
     }
-    FindItApp.showMessage("photoMessage", "Preparing photo...", false);
-    compressPhoto(file).then(data => {
-      photoData = data;
-      document.getElementById("photoPreview").src = data;
+    FindItApp.showMessage("photoMessage", "Compressing photo for faster upload...", false);
+    compressPhoto(file).then(result => {
+      photoData = result.data;
+      document.getElementById("photoPreview").src = result.data;
       document.getElementById("photoPreviewWrap").hidden = false;
       document.getElementById("photoActions").hidden = true;
       document.getElementById("previewActions").hidden = false;
-      FindItApp.showMessage("photoMessage", "Photo ready to upload.", false);
-      log("PHOTO PROCESSED", { approximatePayloadKB: Math.round(data.length * 0.75 / 1024) });
+      FindItApp.showMessage("photoMessage", "Photo ready — " + result.approxKB + " KB after compression.", false);
+      log("PHOTO PROCESSED", result.meta);
     }).catch(error => {
       console.warn("[FindIt Photos] Photo processing failed.", error);
       FindItApp.showMessage("photoMessage", error.message, true);
@@ -151,25 +166,53 @@
         const img = new Image();
         img.onerror = () => reject(new Error("The photo could not be opened."));
         img.onload = () => {
-          const max = 800;
-          const quality = 0.60;
-          const scale = Math.min(1, max / Math.max(img.width, img.height));
+          const maxEdge = 800;
+          const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
+          let width = Math.max(1, Math.round(img.width * scale));
+          let height = Math.max(1, Math.round(img.height * scale));
           const canvas = document.createElement("canvas");
-          canvas.width = Math.max(1, Math.round(img.width * scale));
-          canvas.height = Math.max(1, Math.round(img.height * scale));
+          canvas.width = width;
+          canvas.height = height;
           const ctx = canvas.getContext("2d");
           if (!ctx) return reject(new Error("This device could not prepare the photo."));
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          const processed = canvas.toDataURL("image/jpeg", quality);
-          console.log("[FindIt Photos] Processed before upload", {
-            originalWidth: img.width,
-            originalHeight: img.height,
-            uploadWidth: canvas.width,
-            uploadHeight: canvas.height,
-            jpegQuality: quality,
-            approximatePayloadKB: Math.round(processed.length * 0.75 / 1024)
+          ctx.drawImage(img, 0, 0, width, height);
+
+          let quality = 0.60;
+          let processed = canvas.toDataURL("image/jpeg", quality);
+          let approxKB = Math.round(processed.length * 0.75 / 1024);
+
+          if (approxKB > 300) {
+            quality = 0.50;
+            processed = canvas.toDataURL("image/jpeg", quality);
+            approxKB = Math.round(processed.length * 0.75 / 1024);
+          }
+
+          if (approxKB > 300 && Math.max(width, height) > 640) {
+            const secondScale = 640 / Math.max(width, height);
+            width = Math.max(1, Math.round(width * secondScale));
+            height = Math.max(1, Math.round(height * secondScale));
+            canvas.width = width;
+            canvas.height = height;
+            const ctx2 = canvas.getContext("2d");
+            if (!ctx2) return reject(new Error("This device could not finish preparing the photo."));
+            ctx2.drawImage(img, 0, 0, width, height);
+            processed = canvas.toDataURL("image/jpeg", 0.50);
+            approxKB = Math.round(processed.length * 0.75 / 1024);
+          }
+
+          resolve({
+            data: processed,
+            approxKB,
+            meta: {
+              originalWidth: img.width,
+              originalHeight: img.height,
+              uploadWidth: width,
+              uploadHeight: height,
+              jpegQuality: quality,
+              approximatePayloadKB: approxKB,
+              originalFileKB: Math.round(file.size / 1024)
+            }
           });
-          resolve(processed);
         };
         img.src = reader.result;
       };
@@ -178,7 +221,7 @@
   }
 
   function retake() {
-    if (busy) return;
+    if (busy || uploadInProgress) return;
     log("RETAKE");
     pauseGamePolling();
     FindItApp.showMessage("photoMessage", "Take a replacement photo. Your current photo is kept until a new one is selected.", false);
@@ -188,14 +231,13 @@
   function startUploadIndicator() {
     stopUploadIndicator();
     uploadStartedAt = Date.now();
-    updateUploadIndicator();
-    uploadTimer = setInterval(updateUploadIndicator, 1000);
-  }
-
-  function updateUploadIndicator() {
-    const seconds = Math.max(0, Math.floor((Date.now() - uploadStartedAt) / 1000));
-    const dots = ".".repeat((seconds % 3) + 1);
-    FindItApp.showMessage("photoMessage", "Uploading photo" + dots + " " + seconds + "s", false);
+    uploadProgress = 8;
+    setUploadProgress(uploadProgress, "Starting upload…");
+    uploadTimer = setInterval(() => {
+      const seconds = Math.max(1, Math.floor((Date.now() - uploadStartedAt) / 1000));
+      if (uploadProgress < 88) uploadProgress += uploadProgress < 55 ? 9 : 4;
+      setUploadProgress(uploadProgress, "Uploading photo… " + seconds + "s");
+    }, 900);
   }
 
   function stopUploadIndicator() {
@@ -205,17 +247,22 @@
   }
 
   async function submit() {
-    if (!selected || !photoData || busy) return;
+    if (!selected || !photoData || busy || uploadInProgress) {
+      if (uploadInProgress) log("DUPLICATE SUBMIT BLOCKED");
+      return;
+    }
     const session = validSession();
     if (!session) {
       FindItApp.showMessage("photoMessage", "Your game session is not available. Keep this screen open; the photo has not been discarded.", true);
       return;
     }
 
+    uploadInProgress = true;
     pauseGamePolling();
     setBusy(true);
     startUploadIndicator();
-    log("UPLOAD START", { approximatePayloadKB: Math.round(photoData.length * 0.75 / 1024) });
+    const payloadKB = Math.round(photoData.length * 0.75 / 1024);
+    log("UPLOAD START", { approximatePayloadKB: payloadKB });
 
     try {
       await FindItAPI.post("submitPhoto", {
@@ -227,20 +274,26 @@
 
       log("UPLOAD SUCCESS");
       stopUploadIndicator();
+      setUploadProgress(100, "Upload complete ✓");
+      FindItApp.showMessage("photoMessage", "Photo uploaded successfully.", false);
+      await new Promise(resolve => setTimeout(resolve, 250));
+      uploadInProgress = false;
       setBusy(false);
       await returnToGame();
     } catch (error) {
       stopUploadIndicator();
+      uploadInProgress = false;
       log("UPLOAD FAIL", { error: error && error.message });
       console.warn("[FindIt Photos] Photo upload failed; preserving session, challenge and processed photo.", error);
       setBusy(false);
+      setUploadProgress(0, "Upload failed");
       pauseGamePolling();
       FindItApp.showMessage("photoMessage", "Upload failed. Your photo and game are still here — tap Use Photo to retry.", true);
     }
   }
 
   async function pass() {
-    if (!selected || busy) return;
+    if (!selected || busy || uploadInProgress) return;
     if (!window.confirm("Pass this challenge? You won't submit a photo for it.")) return;
     const session = validSession();
     if (!session) {
@@ -270,12 +323,13 @@
   }
 
   function cancelPreview() {
-    if (busy) return;
+    if (busy || uploadInProgress) return;
     photoData = null;
     document.getElementById("photoPreview").removeAttribute("src");
     document.getElementById("photoPreviewWrap").hidden = true;
     document.getElementById("photoActions").hidden = false;
     document.getElementById("previewActions").hidden = true;
+    hideUploadProgress();
     FindItApp.showMessage("photoMessage", "", false);
     log("PREVIEW CANCELLED");
   }
