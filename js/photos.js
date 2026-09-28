@@ -4,9 +4,15 @@
   let photoData = null;
   let busy = false;
 
+  function validSession() {
+    const session = FindItApp.state.session;
+    return session && session.gameCode && session.playerId ? session : null;
+  }
+
   function open(challenge) {
     selected = challenge;
     photoData = null;
+    busy = false;
     document.getElementById("photoChallengeNumber").textContent = "Challenge " + challenge.challengeNumber;
     document.getElementById("photoChallengeName").textContent = challenge.name;
     document.getElementById("photoChallengeDescription").textContent = challenge.description || "";
@@ -15,30 +21,42 @@
     document.getElementById("photoPreviewWrap").hidden = true;
     document.getElementById("photoActions").hidden = false;
     document.getElementById("previewActions").hidden = true;
+    setBusy(false);
     FindItApp.showMessage("photoMessage", "", false);
     FindItApp.navigate("photoScreen", { activity:"photo" });
   }
 
   function back() {
     if (busy) return;
-    selected = null; photoData = null;
+    selected = null;
+    photoData = null;
     FindItApp.navigate("challengesScreen");
     FindItChallenges.load();
   }
 
-  function choosePhoto() { if (!busy) document.getElementById("photoInput").click(); }
+  function choosePhoto() {
+    if (!busy) document.getElementById("photoInput").click();
+  }
 
   function selectedFile(event) {
     const file = event.target.files && event.target.files[0];
-    if (!file) return;
-    if (!file.type.startsWith("image/")) { FindItApp.showMessage("photoMessage", "Please choose a photo.", true); return; }
-    if (file.size > 12 * 1024 * 1024) { FindItApp.showMessage("photoMessage", "That photo is too large. Please use a smaller photo.", true); return; }
+    if (!file || busy) return;
+    if (!file.type.startsWith("image/")) {
+      FindItApp.showMessage("photoMessage", "Please choose a photo.", true);
+      return;
+    }
+    if (file.size > 12 * 1024 * 1024) {
+      FindItApp.showMessage("photoMessage", "That photo is too large. Please use a smaller photo.", true);
+      return;
+    }
+    FindItApp.showMessage("photoMessage", "Preparing photo...", false);
     compressPhoto(file).then(data => {
       photoData = data;
       document.getElementById("photoPreview").src = data;
       document.getElementById("photoPreviewWrap").hidden = false;
       document.getElementById("photoActions").hidden = true;
       document.getElementById("previewActions").hidden = false;
+      FindItApp.showMessage("photoMessage", "Photo ready to upload.", false);
     }).catch(error => FindItApp.showMessage("photoMessage", error.message, true));
   }
 
@@ -65,43 +83,87 @@
   }
 
   function retake() {
+    if (busy) return;
     photoData = null;
     document.getElementById("photoInput").value = "";
     document.getElementById("photoPreviewWrap").hidden = true;
     document.getElementById("photoActions").hidden = false;
     document.getElementById("previewActions").hidden = true;
+    FindItApp.showMessage("photoMessage", "", false);
     choosePhoto();
   }
 
   async function submit() {
     if (!selected || !photoData || busy) return;
-    busy = true; setBusy(true); FindItApp.showMessage("photoMessage", "Uploading photo...", false);
+    const session = validSession();
+    if (!session) {
+      FindItApp.showMessage("photoMessage", "Your game session is not available. Keep this screen open and try again.", true);
+      return;
+    }
+
+    busy = true;
+    setBusy(true);
+    FindItApp.showMessage("photoMessage", "Uploading photo...", false);
+
     try {
-      const session = FindItApp.state.session;
-      await FindItAPI.post("submitPhoto", { gameCode:session.gameCode, playerId:session.playerId, challengeId:selected.challengeId, photoData:photoData });
-      selected = null; photoData = null;
+      await FindItAPI.post("submitPhoto", {
+        gameCode: session.gameCode,
+        playerId: session.playerId,
+        challengeId: selected.challengeId,
+        photoData: photoData
+      });
+
+      selected = null;
+      photoData = null;
+      busy = false;
+      setBusy(false);
       FindItApp.navigate("challengesScreen");
       await FindItChallenges.load();
-    } catch (error) { FindItApp.showMessage("photoMessage", error.message, true); }
-    finally { busy = false; setBusy(false); }
+    } catch (error) {
+      console.warn("[FindIt Photos] Photo upload failed; keeping player, challenge and photo for manual retry.", error);
+      busy = false;
+      setBusy(false);
+      FindItApp.showMessage("photoMessage", "Upload failed. Your photo is still here — tap Use Photo to retry.", true);
+    }
   }
 
   async function pass() {
     if (!selected || busy) return;
     if (!window.confirm("Pass this challenge? You won't submit a photo for it.")) return;
-    busy = true; setBusy(true); FindItApp.showMessage("photoMessage", "Passing challenge...", false);
+    const session = validSession();
+    if (!session) {
+      FindItApp.showMessage("photoMessage", "Your game session is not available. Keep this screen open and try again.", true);
+      return;
+    }
+
+    busy = true;
+    setBusy(true);
+    FindItApp.showMessage("photoMessage", "Passing challenge...", false);
     try {
-      const session = FindItApp.state.session;
-      await FindItAPI.post("passChallenge", { gameCode:session.gameCode, playerId:session.playerId, challengeId:selected.challengeId });
-      selected = null; photoData = null;
+      await FindItAPI.post("passChallenge", {
+        gameCode: session.gameCode,
+        playerId: session.playerId,
+        challengeId: selected.challengeId
+      });
+      selected = null;
+      photoData = null;
+      busy = false;
+      setBusy(false);
       FindItApp.navigate("challengesScreen");
       await FindItChallenges.load();
-    } catch (error) { FindItApp.showMessage("photoMessage", error.message, true); }
-    finally { busy = false; setBusy(false); }
+    } catch (error) {
+      console.warn("[FindIt Photos] Pass failed; preserving current player and challenge.", error);
+      busy = false;
+      setBusy(false);
+      FindItApp.showMessage("photoMessage", "Could not pass this challenge. Please try again.", true);
+    }
   }
 
   function setBusy(value) {
-    ["takePhotoButton","passChallengeButton","photoBackButton","usePhotoButton","retakeButton","cancelPreviewButton"].forEach(id => { const el=document.getElementById(id); if(el) el.disabled=value; });
+    ["takePhotoButton","passChallengeButton","photoBackButton","usePhotoButton","retakeButton","cancelPreviewButton"].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.disabled = value;
+    });
   }
 
   document.addEventListener("DOMContentLoaded", () => {
@@ -109,7 +171,14 @@
     document.getElementById("photoInput").addEventListener("change", selectedFile);
     document.getElementById("usePhotoButton").addEventListener("click", submit);
     document.getElementById("retakeButton").addEventListener("click", retake);
-    document.getElementById("cancelPreviewButton").addEventListener("click", () => { photoData=null; document.getElementById("photoPreviewWrap").hidden=true; document.getElementById("photoActions").hidden=false; document.getElementById("previewActions").hidden=true; });
+    document.getElementById("cancelPreviewButton").addEventListener("click", () => {
+      if (busy) return;
+      photoData = null;
+      document.getElementById("photoPreviewWrap").hidden = true;
+      document.getElementById("photoActions").hidden = false;
+      document.getElementById("previewActions").hidden = true;
+      FindItApp.showMessage("photoMessage", "", false);
+    });
     document.getElementById("passChallengeButton").addEventListener("click", pass);
     document.getElementById("photoBackButton").addEventListener("click", back);
   });
