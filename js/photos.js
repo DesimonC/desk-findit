@@ -3,6 +3,8 @@
   let selected = null;
   let photoData = null;
   let busy = false;
+  let uploadTimer = null;
+  let uploadStartedAt = 0;
 
   function validSession() {
     const session = FindItApp.state.session;
@@ -10,6 +12,7 @@
   }
 
   function open(challenge) {
+    stopUploadIndicator();
     selected = challenge;
     photoData = null;
     busy = false;
@@ -28,6 +31,7 @@
 
   function back() {
     if (busy) return;
+    stopUploadIndicator();
     selected = null;
     photoData = null;
     FindItApp.navigate("challengesScreen");
@@ -93,6 +97,25 @@
     choosePhoto();
   }
 
+  function startUploadIndicator() {
+    stopUploadIndicator();
+    uploadStartedAt = Date.now();
+    updateUploadIndicator();
+    uploadTimer = setInterval(updateUploadIndicator, 1000);
+  }
+
+  function updateUploadIndicator() {
+    const seconds = Math.max(0, Math.floor((Date.now() - uploadStartedAt) / 1000));
+    const dots = ".".repeat((seconds % 3) + 1);
+    FindItApp.showMessage("photoMessage", "Uploading photo" + dots + " " + seconds + "s", false);
+  }
+
+  function stopUploadIndicator() {
+    if (uploadTimer) clearInterval(uploadTimer);
+    uploadTimer = null;
+    uploadStartedAt = 0;
+  }
+
   async function submit() {
     if (!selected || !photoData || busy) return;
     const session = validSession();
@@ -103,7 +126,7 @@
 
     busy = true;
     setBusy(true);
-    FindItApp.showMessage("photoMessage", "Uploading photo...", false);
+    startUploadIndicator();
 
     try {
       await FindItAPI.post("submitPhoto", {
@@ -113,6 +136,7 @@
         photoData: photoData
       });
 
+      stopUploadIndicator();
       selected = null;
       photoData = null;
       busy = false;
@@ -120,6 +144,7 @@
       FindItApp.navigate("challengesScreen");
       await FindItChallenges.load();
     } catch (error) {
+      stopUploadIndicator();
       console.warn("[FindIt Photos] Photo upload failed; keeping player, challenge and photo for manual retry.", error);
       busy = false;
       setBusy(false);
