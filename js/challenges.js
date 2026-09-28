@@ -1,6 +1,6 @@
 /* Find It! V2 - challenge cards, progress and completion UI */
 (function(){
- let loading=false,hostProgressTimer=null,hostProgressLoading=false;
+ let loading=false,hostProgressTimer=null,hostProgressLoading=false,startVotingBusy=false;
 
  async function loadChallenges(){
   const session=FindItApp.state.session;
@@ -45,7 +45,6 @@
     button.setAttribute("aria-disabled",complete?"true":"false");
     button.innerHTML='<span class="challenge-number">Challenge '+challenge.challengeNumber+'</span><strong>'+escapeHtml(challenge.name)+'</strong><span class="challenge-description">'+escapeHtml(challenge.description)+'</span><span class="challenge-status">'+(challenge.status==="SUBMITTED"?"✓ Photo submitted":challenge.status==="PASSED"?"✓ Passed":"Tap to open →")+'</span>';
     if(!complete){
-     /* Direct handler deliberately lives on the button. It survives independently of delegated/container wiring. */
      button.onclick=function(event){
       event.preventDefault();
       event.stopPropagation();
@@ -73,8 +72,47 @@
  function startHostProgressRefresh(){if(hostProgressTimer||hostProgressLoading||!FindItApp.state.game||FindItApp.state.game.status!=="PLAYING"||!FindItApp.state.session||!FindItApp.state.session.isHost)return;scheduleNextHostProgress(0);}
  function scheduleNextHostProgress(delay){if(hostProgressTimer)clearTimeout(hostProgressTimer);if(!FindItApp.state.game||FindItApp.state.game.status!=="PLAYING"||!FindItApp.state.session||!FindItApp.state.session.isHost){stopHostProgressRefresh();return;}hostProgressTimer=setTimeout(async()=>{hostProgressTimer=null;await loadHostProgress();if(FindItApp.state.game&&FindItApp.state.game.status==="PLAYING"&&FindItApp.state.session&&FindItApp.state.session.isHost)scheduleNextHostProgress(3000);else stopHostProgressRefresh();},delay);}
  function stopHostProgressRefresh(){if(hostProgressTimer)clearTimeout(hostProgressTimer);hostProgressTimer=null;}
- async function loadHostProgress(){const session=FindItApp.state.session;if(!session||!session.isHost||!FindItApp.state.game||FindItApp.state.game.status!=="PLAYING"||hostProgressLoading)return;hostProgressLoading=true;try{const data=await FindItAPI.get("getCompletionStatus",{gameCode:session.gameCode,playerId:session.playerId,_t:Date.now()});if(!FindItApp.state.game||FindItApp.state.game.status!=="PLAYING")return;const box=document.getElementById("hostProgress");box.hidden=false;box.innerHTML='<h3>Player progress</h3>'+data.players.map(p=>'<div class="player-progress"><span>'+escapeHtml(p.name)+(p.isHost?' (Host)':'')+'</span><strong>'+p.completedCount+'/'+p.challengeCount+(p.complete?' ✓':'')+'</strong></div>').join('')+(data.everyoneComplete?'<p class="ready-note">Everyone is complete. Ready to vote.</p><button id="startVotingButton" class="button primary">Start Voting</button>':'');if(data.everyoneComplete)document.getElementById("startVotingButton").onclick=startVoting;}catch(error){console.warn("[FindIt Challenges] Completion poll failed; preserving progress.",error);}finally{hostProgressLoading=false;}}
- async function startVoting(){const button=document.getElementById("startVotingButton");if(button)button.disabled=true;try{const s=FindItApp.state.session;await FindItAPI.post("startVoting",{gameCode:s.gameCode,playerId:s.playerId});stopHostProgressRefresh();await FindItApp.pollNow();}catch(error){FindItApp.showMessage("challengeMessage",error.message,true);if(button)button.disabled=false;}}
+ async function loadHostProgress(){const session=FindItApp.state.session;if(!session||!session.isHost||!FindItApp.state.game||FindItApp.state.game.status!=="PLAYING"||hostProgressLoading)return;hostProgressLoading=true;try{const data=await FindItAPI.get("getCompletionStatus",{gameCode:session.gameCode,playerId:session.playerId,_t:Date.now()});if(!FindItApp.state.game||FindItApp.state.game.status!=="PLAYING")return;const box=document.getElementById("hostProgress");box.hidden=false;box.innerHTML='<h3>Player progress</h3>'+data.players.map(p=>'<div class="player-progress"><span>'+escapeHtml(p.name)+(p.isHost?' (Host)':'')+'</span><strong>'+p.completedCount+'/'+p.challengeCount+(p.complete?' ✓':'')+'</strong></div>').join('')+(data.everyoneComplete?'<p class="ready-note">Everyone is complete. Ready to vote.</p><button id="startVotingButton" class="button primary">Start Voting</button>':'');if(data.everyoneComplete){const button=document.getElementById("startVotingButton");button.disabled=startVotingBusy;button.onclick=startVoting;}}catch(error){console.warn("[FindIt Challenges] Completion poll failed; preserving progress.",error);}finally{hostProgressLoading=false;}}
+
+ function withTimeout(promise,ms){return Promise.race([promise,new Promise((_,reject)=>setTimeout(()=>{const e=new Error("Start Voting response timed out.");e.code="START_VOTING_TIMEOUT";reject(e);},ms))]);}
+
+ async function verifyVotingState(){
+  try{
+   await FindItApp.pollNow();
+   return !!(FindItApp.state.game&&FindItApp.state.game.status==="VOTING");
+  }catch(_){return false;}
+ }
+
+ async function startVoting(){
+  if(startVotingBusy)return;
+  const button=document.getElementById("startVotingButton");
+  const s=FindItApp.state.session;
+  if(!s)return;
+  startVotingBusy=true;
+  if(button)button.disabled=true;
+  FindItApp.showMessage("challengeMessage","Starting voting…",false);
+  console.log("[FindIt Challenges] START VOTING POST",{gameCode:s.gameCode,playerId:s.playerId});
+  try{
+   const result=await withTimeout(FindItAPI.post("startVoting",{gameCode:s.gameCode,playerId:s.playerId}),12000);
+   console.log("[FindIt Challenges] START VOTING POST OK",result);
+   stopHostProgressRefresh();
+   await FindItApp.pollNow();
+  }catch(error){
+   console.warn("[FindIt Challenges] START VOTING POST FAILED/STALLED - verifying server state",error);
+   const nowVoting=await verifyVotingState();
+   if(nowVoting){
+    console.log("[FindIt Challenges] SERVER IS VOTING despite missing POST response");
+    stopHostProgressRefresh();
+    return;
+   }
+   FindItApp.showMessage("challengeMessage",error.message||"Could not start voting. Please try again.",true);
+  }finally{
+   startVotingBusy=false;
+   const currentButton=document.getElementById("startVotingButton");
+   if(currentButton&&(!FindItApp.state.game||FindItApp.state.game.status==="PLAYING"))currentButton.disabled=false;
+  }
+ }
+
  function escapeHtml(value){return String(value||"").replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
  window.FindItChallenges={load:loadChallenges,stopHostProgressRefresh,openChallenge:openChallenge};
 })();
