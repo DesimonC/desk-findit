@@ -22,7 +22,19 @@ function joinGameV2(data) {
   if(!/^[A-Z2-9]{4}$/.test(gameCode))throw apiError_("GAME_CODE_REQUIRED","Enter the 4-character game code.");
   if(!playerName)throw apiError_("PLAYER_NAME_REQUIRED","Your name is required.");
   const lock=LockService.getScriptLock();lock.waitLock(10000);
-  try{const game=findGame_(gameCode);if(!game)throw apiError_("GAME_NOT_FOUND","Game "+gameCode+" could not be found.");if(String(game.Status)!=="WAITING")throw apiError_("GAME_ALREADY_STARTED","This game has already started.");const duplicate=findOne_("Players",r=>String(r.GameCode)===gameCode&&String(r.Name).trim().toLowerCase()===playerName.toLowerCase());if(duplicate)throw apiError_("NAME_IN_USE","That player name is already in this game.");const playerId=id_("P");appendObject_("Players",{PlayerId:playerId,GameCode:gameCode,Name:playerName,IsHost:false,JoinedAt:new Date()});return {game:publicGame_(game),player:{playerId,gameCode,name:playerName,isHost:false}};}finally{lock.releaseLock();}
+  try{
+    const game=findGame_(gameCode);
+    if(!game)throw apiError_("GAME_NOT_FOUND","Game "+gameCode+" could not be found.");
+    if(String(game.Status)!=="WAITING")throw apiError_("GAME_ALREADY_STARTED","This game has already started.");
+    const duplicate=findOne_("Players",r=>String(r.GameCode)===gameCode&&String(r.Name).trim().toLowerCase()===playerName.toLowerCase());
+    if(duplicate){
+      if(bool_(duplicate.IsHost)) throw apiError_("NAME_IN_USE","That player name is already in this game.");
+      return {game:publicGame_(game),player:publicPlayer_(duplicate),reused:true};
+    }
+    const playerId=id_("P");
+    appendObject_("Players",{PlayerId:playerId,GameCode:gameCode,Name:playerName,IsHost:false,JoinedAt:new Date()});
+    return {game:publicGame_(game),player:{playerId,gameCode,name:playerName,isHost:false},reused:false};
+  }finally{lock.releaseLock();}
 }
 function startGameV2(data){const gameCode=normalizeCode_(data.gameCode),playerId=String(data.playerId||""),lock=LockService.getScriptLock();lock.waitLock(10000);try{const game=requireSession_(gameCode,playerId).game;if(String(game.HostPlayerId)!==playerId)throw apiError_("HOST_ONLY","Only the host can start the game.");if(String(game.Status)!=="WAITING")throw apiError_("INVALID_GAME_STATE","The game cannot be started from its current state.");const selected=rowsAsObjects_("GameChallenges").filter(r=>String(r.GameCode)===gameCode);if(selected.length!==Number(game.ChallengeCount))throw apiError_("CHALLENGE_SETUP_INVALID","The selected challenge set is incomplete.");updateObjectRow_("Games",game._row,{Status:"PLAYING",StartedAt:new Date()});return {status:"PLAYING"};}finally{lock.releaseLock();}}
 function getGameStateV2(data){const gameCode=normalizeCode_(data.gameCode),playerId=String(data.playerId||""),session=requireSession_(gameCode,playerId),players=rowsAsObjects_("Players").filter(r=>String(r.GameCode)===gameCode).map(publicPlayer_);return {game:publicGame_(session.game),player:publicPlayer_(session.player),players};}
