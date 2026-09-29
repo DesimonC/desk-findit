@@ -2,6 +2,8 @@
 (function () {
   const GET_MAX_RETRIES = 2;
   const GET_RETRY_DELAY_MS = 450;
+  const JOIN_MAX_RETRIES = 2;
+  const JOIN_RETRY_DELAY_MS = 500;
 
   function apiUrl() {
     const url = String(window.FINDIT_CONFIG.apiUrl || "").trim();
@@ -75,6 +77,16 @@
     return payload.data;
   }
 
+  async function sendPost(action, data, requestUrl) {
+    const response = await fetch(requestUrl, {
+      method: "POST",
+      redirect: "follow",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(Object.assign({ action }, data || {}))
+    });
+    return readResponse(response, action, "POST", requestUrl);
+  }
+
   window.FindItAPI = {
     async get(action, params) {
       const url = new URL(apiUrl());
@@ -115,19 +127,32 @@
       const url = new URL(apiUrl());
       url.searchParams.set("action", action);
       const requestUrl = url.toString();
-      console.log("[FindIt API] POST", action, requestUrl, data || {});
-      try {
-        const response = await fetch(requestUrl, {
-          method: "POST",
-          redirect: "follow",
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify(Object.assign({ action }, data || {}))
-        });
-        const details = await readResponse(response, action, "POST", requestUrl);
-        return parseDetails(details);
-      } catch (error) {
-        console.error("[FindIt API] POST FAILED - NOT RETRIED", action, error);
-        throw error;
+      const retryableJoin = action === "joinGame";
+      const maxRetries = retryableJoin ? JOIN_MAX_RETRIES : 0;
+
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        console.log("[FindIt API] POST", action, requestUrl, "attempt", attempt + 1, data || {});
+        try {
+          const details = await sendPost(action, data, requestUrl);
+
+          if (retryableJoin && isTransientEcho404(details) && attempt < maxRetries) {
+            const waitMs = JOIN_RETRY_DELAY_MS * (attempt + 1);
+            console.warn("[FindIt API] JOIN TRANSIENT ECHO 404 - RETRYING", {
+              action,
+              attempt: attempt + 1,
+              nextAttempt: attempt + 2,
+              waitMs,
+              finalUrl: details.finalUrl
+            });
+            await delay(waitMs);
+            continue;
+          }
+
+          return parseDetails(details);
+        } catch (error) {
+          console.error("[FindIt API] POST FAILED", action, "attempt", attempt + 1, error);
+          throw error;
+        }
       }
     }
   };
