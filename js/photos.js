@@ -246,6 +246,37 @@
     uploadStartedAt = 0;
   }
 
+  async function confirmServerStoredPhoto(session, challengeId) {
+    try {
+      log("VERIFYING UPLOAD ON SERVER");
+      const data = await FindItAPI.get("getChallenges", {
+        gameCode: session.gameCode,
+        playerId: session.playerId,
+        _t: Date.now()
+      });
+      const list = Array.isArray(data && data.challenges) ? data.challenges : [];
+      const match = list.find(item => String(item.challengeId) === String(challengeId));
+      const stored = !!match && String(match.status) === "SUBMITTED";
+      log("UPLOAD VERIFY RESULT", { stored, status: match && match.status });
+      return stored;
+    } catch (verifyError) {
+      console.warn("[FindIt Photos] Could not verify whether the failed upload was stored.", verifyError);
+      log("UPLOAD VERIFY FAILED", { error: verifyError && verifyError.message });
+      return false;
+    }
+  }
+
+  async function finishSuccessfulUpload(message) {
+    log("UPLOAD CONFIRMED");
+    stopUploadIndicator();
+    setUploadProgress(100, "Upload complete ✓");
+    FindItApp.showMessage("photoMessage", message || "Photo uploaded successfully.", false);
+    await new Promise(resolve => setTimeout(resolve, 250));
+    uploadInProgress = false;
+    setBusy(false);
+    await returnToGame();
+  }
+
   async function submit() {
     if (!selected || !photoData || busy || uploadInProgress) {
       if (uploadInProgress) log("DUPLICATE SUBMIT BLOCKED");
@@ -262,33 +293,42 @@
     setBusy(true);
     startUploadIndicator();
     const payloadKB = Math.round(photoData.length * 0.75 / 1024);
+    const challengeId = String(selected.challengeId || "");
     log("UPLOAD START", { approximatePayloadKB: payloadKB });
 
     try {
       await FindItAPI.post("submitPhoto", {
         gameCode: session.gameCode,
         playerId: session.playerId,
-        challengeId: selected.challengeId,
+        challengeId: challengeId,
         photoData: photoData
       });
 
       log("UPLOAD SUCCESS");
-      stopUploadIndicator();
-      setUploadProgress(100, "Upload complete ✓");
-      FindItApp.showMessage("photoMessage", "Photo uploaded successfully.", false);
-      await new Promise(resolve => setTimeout(resolve, 250));
-      uploadInProgress = false;
-      setBusy(false);
-      await returnToGame();
+      await finishSuccessfulUpload("Photo uploaded successfully.");
     } catch (error) {
       stopUploadIndicator();
+      log("UPLOAD RESPONSE FAILED", { code: error && error.code, error: error && error.message });
+      console.warn("[FindIt Photos] Upload response failed; checking server before declaring failure.", error);
+      FindItApp.showMessage("photoMessage", "Checking whether your photo reached the game…", false);
+      setUploadProgress(92, "Checking upload…");
+
+      const alreadyStored = error && error.code === "CHALLENGE_ALREADY_COMPLETE"
+        ? true
+        : await confirmServerStoredPhoto(session, challengeId);
+
+      if (alreadyStored) {
+        log("UPLOAD RECOVERED AFTER RESPONSE FAILURE");
+        await finishSuccessfulUpload("Photo received ✓");
+        return;
+      }
+
       uploadInProgress = false;
-      log("UPLOAD FAIL", { error: error && error.message });
-      console.warn("[FindIt Photos] Photo upload failed; preserving session, challenge and processed photo.", error);
       setBusy(false);
       setUploadProgress(0, "Upload failed");
       pauseGamePolling();
-      FindItApp.showMessage("photoMessage", "Upload failed. Your photo and game are still here — tap Use Photo to retry.", true);
+      log("UPLOAD FAIL", { code: error && error.code, error: error && error.message });
+      FindItApp.showMessage("photoMessage", "Upload could not be confirmed. Your photo and game are still here — tap Use Photo to retry.", true);
     }
   }
 
