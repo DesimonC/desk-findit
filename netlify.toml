@@ -1,0 +1,9 @@
+[build]
+  publish = "."
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Cache-Control = "no-store"
+    Referrer-Policy = "no-referrer"
+    X-Content-Type-Options = "nosniff"
+    Permissions-Policy = "geolocation=(), microphone=()"

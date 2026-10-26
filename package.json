@@ -1,0 +1,13 @@
+{
+  "name": "desk-findit",
+  "private": true,
+  "version": "3.0.0",
+  "scripts": {
+    "test": "node --test --test-timeout=15000 tests/*.test.cjs",
+    "check": "node --check js/app.js && node --check js/api.js && node --check sw.js"
+  },
+  "devDependencies": {
+    "linkedom": "^0.18.14",
+    "prettier": "^3.9.10"
+  }
+}
