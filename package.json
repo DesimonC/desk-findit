@@ -1,0 +1,12 @@
+{
+  "name": "desk-findit",
+  "private": true,
+  "version": "3.0.0",
+  "scripts": {
+    "test": "node --test tests/game.test.mjs",
+    "test:browser": "node --test tests/browser.test.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}

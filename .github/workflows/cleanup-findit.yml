@@ -1,0 +1,31 @@
+name: Remove expired Find It games
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 * * * *'
+permissions: {}
+concurrency:
+  group: findit-expiry-cleanup
+  cancel-in-progress: false
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      FINDIT_CLEANUP_SECRET: ${{ secrets.FINDIT_CLEANUP_SECRET }}
+    steps:
+      - name: Delete expired games and photos
+        shell: python
+        run: |
+          import json, os, urllib.request
+          secret = os.environ.get('FINDIT_CLEANUP_SECRET', '')
+          if not secret:
+              raise SystemExit('Configure FINDIT_CLEANUP_SECRET after the Supabase deployment.')
+          url = 'https://rqbwdxsxxqnyqigikrht.supabase.co/functions/v1/findit-api'
+          request = urllib.request.Request(url, data=b'{"action":"sweepExpired"}',
+              headers={'Content-Type': 'application/json', 'Authorization': 'Bearer ' + secret})
+          with urllib.request.urlopen(request, timeout=120) as response:
+              result = json.load(response)
+          if not result.get('ok'):
+              raise SystemExit('Expiry cleanup failed; inspect the Edge Function logs.')
+          print('Expired games removed:', result['data']['cleaned'])

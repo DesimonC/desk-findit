@@ -1,0 +1,7 @@
+project_id = "desk-findit"
+
+[functions.findit-api]
+entrypoint = "./functions/findit-api/index.mjs"
+# The function verifies cryptographically random per-game bearer tokens itself.
+# Creating/joining games deliberately does not require an email account.
+verify_jwt = false

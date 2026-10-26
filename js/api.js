@@ -1,159 +1,30 @@
-/* Find It! V2 - the only Apps Script HTTP client */
-(function () {
-  const GET_MAX_RETRIES = 2;
-  const GET_RETRY_DELAY_MS = 450;
-  const JOIN_MAX_RETRIES = 2;
-  const JOIN_RETRY_DELAY_MS = 500;
-
-  function apiUrl() {
-    const url = String(window.FINDIT_CONFIG.apiUrl || "").trim();
-    if (!/^https:\/\//i.test(url) || url.includes("PASTE_APPS_SCRIPT")) {
-      throw new Error("Apps Script Web App URL has not been configured in js/config.js.");
-    }
-    return url;
+/* Supabase transport. Apps Script remains active until deployment is verified. */
+(function(){
+ const legacy=window.FindItAPI;
+ const enabled=window.FINDIT_CONFIG.backend==='supabase'||new URLSearchParams(location.search).get('backend')==='supabase';
+ if(!enabled){legacy.isSupabase=false;return;}
+ let pending=null;
+ function newToken(){return Array.from(crypto.getRandomValues(new Uint8Array(32)),x=>x.toString(16).padStart(2,'0')).join('');}
+ async function send(action,data){
+  const joining=action==='createGame'||action==='joinGame';
+  const session=FindItSession.get();
+  if(joining&&!pending)pending={action,token:newToken()};
+  if(joining&&pending.action!==action)pending={action,token:newToken()};
+  const token=joining?pending.token:session&&session.sessionToken;
+  if(action==='getLatestWinner')return {hasWinner:false};
+  if(!token)throw Object.assign(new Error('Your player session is not available.'),{code:'SESSION_INVALID'});
+  const response=await fetch(window.FINDIT_CONFIG.supabaseApiUrl,{
+   method:'POST',cache:'no-store',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},
+   body:JSON.stringify(Object.assign({},data,{action})),signal:AbortSignal.timeout(45000)
+  });
+  let payload;try{payload=await response.json();}catch{throw new Error('The game service could not be reached. Please retry.');}
+  if(!response.ok||!payload.ok){
+   const error=Object.assign(new Error(payload.error?.message||'The game request failed.'),{code:payload.error?.code});
+   if(joining&&['NAME_IN_USE','GAME_ALREADY_STARTED','GAME_NOT_FOUND','SESSION_INVALID'].includes(error.code))pending=null;
+   throw error;
   }
-
-  function delay(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-
-  async function readResponse(response, action, method, requestUrl) {
-    const text = await response.text();
-    const contentType = response.headers.get("content-type") || "";
-    const details = {
-      action,
-      method,
-      status: response.status,
-      ok: response.ok,
-      contentType,
-      requestUrl,
-      finalUrl: response.url,
-      redirected: response.redirected,
-      text
-    };
-    console.log("[FindIt API] RESPONSE", {
-      action,
-      method,
-      status: response.status,
-      ok: response.ok,
-      contentType,
-      requestUrl,
-      finalUrl: response.url,
-      redirected: response.redirected
-    });
-    return details;
-  }
-
-  function isTransientEcho404(details) {
-    return details.status === 404 &&
-      /^text\/html\b/i.test(details.contentType) &&
-      /script\.googleusercontent\.com\/macros\/echo/i.test(details.finalUrl || "");
-  }
-
-  function parseDetails(details) {
-    let payload;
-    try { payload = JSON.parse(details.text); }
-    catch (_) {
-      console.error("[FindIt API] INVALID JSON", {
-        action: details.action,
-        method: details.method,
-        status: details.status,
-        contentType: details.contentType,
-        requestUrl: details.requestUrl,
-        finalUrl: details.finalUrl,
-        redirected: details.redirected,
-        responsePreview: details.text.slice(0, 800)
-      });
-      throw new Error(details.action + " failed: HTTP " + details.status + " returned " + (details.contentType || "unknown content type") + ". See console [FindIt API] INVALID JSON details.");
-    }
-    if (!payload || payload.ok !== true) {
-      const error = payload && payload.error ? payload.error : {};
-      console.error("[FindIt API] API ERROR", {action:details.action, method:details.method, status:details.status, error});
-      const e = new Error(error.message || "Find It API request failed.");
-      e.code = error.code || "API_ERROR";
-      throw e;
-    }
-    console.log("[FindIt API] OK", details.action);
-    return payload.data;
-  }
-
-  async function sendPost(action, data, requestUrl) {
-    const response = await fetch(requestUrl, {
-      method: "POST",
-      redirect: "follow",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify(Object.assign({ action }, data || {}))
-    });
-    return readResponse(response, action, "POST", requestUrl);
-  }
-
-  window.FindItAPI = {
-    async get(action, params) {
-      const url = new URL(apiUrl());
-      url.searchParams.set("action", action);
-      Object.entries(params || {}).forEach(([k, v]) => {
-        if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
-      });
-      const requestUrl = url.toString();
-
-      for (let attempt = 0; attempt <= GET_MAX_RETRIES; attempt++) {
-        console.log("[FindIt API] GET", action, requestUrl, "attempt", attempt + 1);
-        try {
-          const response = await fetch(requestUrl, { method: "GET", redirect: "follow", cache: "no-store" });
-          const details = await readResponse(response, action, "GET", requestUrl);
-
-          if (isTransientEcho404(details) && attempt < GET_MAX_RETRIES) {
-            const waitMs = GET_RETRY_DELAY_MS * (attempt + 1);
-            console.warn("[FindIt API] TRANSIENT ECHO 404 - RETRYING", {
-              action,
-              attempt: attempt + 1,
-              nextAttempt: attempt + 2,
-              waitMs,
-              finalUrl: details.finalUrl
-            });
-            await delay(waitMs);
-            continue;
-          }
-
-          return parseDetails(details);
-        } catch (error) {
-          console.error("[FindIt API] GET FAILED", action, "attempt", attempt + 1, error);
-          throw error;
-        }
-      }
-    },
-
-    async post(action, data) {
-      const url = new URL(apiUrl());
-      url.searchParams.set("action", action);
-      const requestUrl = url.toString();
-      const retryableJoin = action === "joinGame";
-      const maxRetries = retryableJoin ? JOIN_MAX_RETRIES : 0;
-
-      for (let attempt = 0; attempt <= maxRetries; attempt++) {
-        console.log("[FindIt API] POST", action, requestUrl, "attempt", attempt + 1, data || {});
-        try {
-          const details = await sendPost(action, data, requestUrl);
-
-          if (retryableJoin && isTransientEcho404(details) && attempt < maxRetries) {
-            const waitMs = JOIN_RETRY_DELAY_MS * (attempt + 1);
-            console.warn("[FindIt API] JOIN TRANSIENT ECHO 404 - RETRYING", {
-              action,
-              attempt: attempt + 1,
-              nextAttempt: attempt + 2,
-              waitMs,
-              finalUrl: details.finalUrl
-            });
-            await delay(waitMs);
-            continue;
-          }
-
-          return parseDetails(details);
-        } catch (error) {
-          console.error("[FindIt API] POST FAILED", action, "attempt", attempt + 1, error);
-          throw error;
-        }
-      }
-    }
-  };
+  if(joining){payload.data.player.sessionToken=token;pending=null;}
+  return payload.data;
+ }
+ window.FindItAPI={isSupabase:true,get:send,post:send};
 })();
