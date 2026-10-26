@@ -1,9 +1,232 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#111111"><title>Find It! V2</title><link rel="stylesheet" href="css/app.css"></head><body><main class="app-shell"><div id="globalMessage" class="message global-message" aria-live="polite"></div>
-<section id="splashScreen" class="screen active"><div class="hero"><p class="eyebrow">PHOTO HUNT</p><h1>FIND IT!</h1><p class="tagline">See it. Snap it. Win it.</p></div><div id="latestWinnerPanel" class="panel latest-winner" hidden><p class="eyebrow">LAST WINNER</p><img id="latestWinnerPhoto" alt="Latest winning photo"><h3 id="latestWinnerName"></h3><p id="latestWinnerChallenge" class="hint"></p></div><div class="panel"><button id="hostButton" class="button primary">Host a Game</button><div class="divider"><span>or join</span></div><label>Game code<input id="joinGameCodeInput" maxlength="4" autocomplete="off" autocapitalize="characters" placeholder="AB12"></label><label>Your name<input id="joinNameInput" maxlength="30" autocomplete="name" placeholder="Your name"></label><button id="joinButton" class="button secondary">Join Game</button><p id="joinMessage" class="message"></p></div></section>
-<section id="hostSetupScreen" class="screen" hidden><div class="screen-heading"><p class="eyebrow">HOST</p><h2>Create Game</h2></div><div class="panel"><label>Host name<input id="hostNameInput" maxlength="30" autocomplete="name" placeholder="Your name"></label><label>Number of challenges<input id="challengeCountInput" type="number" min="1" max="10" step="1" value="1"></label><p class="hint">Choose 1–10. The server randomly selects that many active challenges.</p><button id="createGameButton" class="button primary">Create Game</button><button id="hostBackButton" class="button ghost">Back</button><p id="hostSetupMessage" class="message"></p></div></section>
-<section id="lobbyScreen" class="screen" hidden><div class="screen-heading"><p class="eyebrow">GAME CODE</p><h2 id="lobbyGameCode" class="game-code">----</h2><p>Share this code with the players.</p></div><div class="panel"><h3>Players</h3><ul id="lobbyPlayers" class="player-list"></ul><button id="startGameButton" class="button primary" hidden>Start Game</button><p id="lobbyMessage" class="message"></p></div></section>
-<section id="challengesScreen" class="screen" hidden><div class="screen-heading compact"><p class="eyebrow">PLAYING</p><h2>Challenges</h2><p><strong id="challengePlayerName"></strong> · <span id="challengeGameCode"></span></p></div><div class="progress-card"><strong id="progressText">0 / 0 Complete</strong><div class="progress-track"><div id="progressBar" class="progress-bar"></div></div></div><p id="challengeMessage" class="message"></p><div id="challengeCards" class="card-grid"></div><div id="completionPanel" class="panel completion-panel" hidden><h3 id="completionTitle">All done!</h3><p id="completionText">Waiting for the other players...</p></div><div id="hostProgress" class="panel host-progress" hidden></div></section>
-<section id="photoScreen" class="screen" hidden><div class="screen-heading compact"><p id="photoChallengeNumber" class="eyebrow">CHALLENGE</p><h2 id="photoChallengeName">Photo Challenge</h2><p id="photoChallengeDescription"></p></div><div class="panel photo-panel"><input id="cameraInput" class="file-input" type="file" accept="image/*" capture="environment"><input id="photoInput" class="file-input" type="file" accept="image/*"><div id="photoPreviewWrap" class="photo-preview-wrap" hidden><img id="photoPreview" class="photo-preview" alt="Photo preview"></div><div id="photoActions"><button id="takePhotoButton" class="button primary">Take Photo</button><button id="choosePhotoButton" class="button secondary">Choose Existing Photo</button><p class="hint">Take Photo opens the device camera where supported. Choose Existing Photo opens the photo library or file picker.</p><button id="passChallengeButton" class="button ghost">Pass Challenge</button><button id="photoBackButton" class="button ghost">Back to Challenges</button></div><div id="previewActions" hidden><button id="usePhotoButton" class="button primary">Use Photo</button><button id="retakeButton" class="button secondary">Retake</button><button id="cancelPreviewButton" class="button ghost">Cancel</button></div><div id="uploadProgressWrap" class="progress-card" hidden><strong id="uploadProgressText">Preparing upload…</strong><div class="progress-track"><div id="uploadProgressBar" class="progress-bar"></div></div></div><p id="photoMessage" class="message"></p></div></section>
-<section id="votingIntroScreen" class="screen" hidden><div class="screen-heading compact"><p id="votingChallengeNumber" class="eyebrow">VOTING</p><h2 id="votingChallengeName">Time to Vote!</h2><p>Choose your favourite anonymous photo.</p></div><div class="panel"><p id="selfVoteNotice">You may vote for your own photo once during the whole game.</p></div><p id="votingMessage" class="message"></p><div id="votingArea"></div><div id="votingProgress" class="panel host-progress" hidden></div></section>
-<section id="resultsScreen" class="screen" hidden><div class="screen-heading compact"><p class="eyebrow">FINISHED</p><h2>Final Results</h2><p>See it. Snap it. Win it.</p></div><p id="resultsMessage" class="message"></p><div id="finalResults" class="panel"><p>Calculating results...</p></div><button id="endGameButton" class="button primary">End Game</button></section></main>
-<script src="js/config.js"></script><script src="js/session.js"></script><script src="js/api.js"></script><script src="js/app.js"></script><script src="js/game.js"></script><script src="js/challenges.js"></script><script src="js/photos.js"></script><script src="js/voting.js"></script><script src="js/results.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <meta name="theme-color" content="#102b36" />
+    <meta
+      name="description"
+      content="Find It! A photo hunt with your favourite people. See it. Snap it. Win it."
+    />
+    <title>Find It! · DesK Apps</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="file_00000000cad881f492198522f5cb5b90.png" />
+    <link rel="apple-touch-icon" href="icons/findit-192.png" />
+    <link rel="stylesheet" href="css/app.css" />
+  </head>
+  <body>
+    <header>
+      <img src="file_00000000cad881f492198522f5cb5b90.png" alt="Find It by DesK Apps" /><span
+        >FIND IT!<small>See it. Snap it. Win it.</small></span
+      ><span id="connection" role="status"></span>
+    </header>
+    <main id="app">
+      <section id="loading" class="screen splash">
+        <img src="file_00000000cad881f492198522f5cb5b90.png" alt="Find It by DesK Apps" />
+        <p>See it. Snap it. Win it.</p>
+        <div class="loading-line"></div>
+      </section>
+      <section id="home" class="screen" hidden>
+        <p class="eyebrow">GOOD COMPANY. GREAT PHOTOS.</p>
+        <h1>Your next<br /><em>little adventure.</em></h1>
+        <p class="intro">
+          A photo hunt with your favourite people. Find the unexpected, snap your best shot and let
+          the votes decide.
+        </p>
+        <div class="hero-steps">
+          <span><b>01</b> Find it</span><span><b>02</b> Snap it</span><span><b>03</b> Win it</span>
+        </div>
+        <div class="choice-grid">
+          <button class="choice host" id="host">
+            <span class="icon">＋</span><strong>Host a game</strong
+            ><span>Gather your people. Start a hunt.</span><b>LET’S GO →</b></button
+          ><button class="choice join" id="join">
+            <span class="icon">↗</span><strong>Join a game</strong
+            ><span>Got a code? You’re invited.</span><b>I’M IN →</b>
+          </button>
+        </div>
+        <p class="footnote">2+ players · 1–10 categories · An internet connection is needed</p>
+        <details>
+          <summary>How to play &amp; photo privacy</summary>
+          <p>
+            Everyone submits or passes every category, then meets in the voting room. Vote once per
+            contested category. You can vote for yourself once in the entire game, including a
+            tie-break vote.
+          </p>
+          <p>
+            The photo with most category votes wins. A tie gets one final vote; another tie is
+            settled by the first successfully received upload.
+          </p>
+          <p>
+            At the end, everyone taps Ready to finish. All uploaded photos, including the winner,
+            and temporary game records are permanently deleted from the app’s backend. Photos you
+            explicitly save to your phone remain. Unfinished games expire after 24 hours without
+            activity; finished games expire after 15 minutes, checked every five minutes. Provider
+            backups and browser or operating-system recovery are outside the app’s deletion
+            controls.
+          </p>
+        </details>
+      </section>
+      <section id="setup" class="screen" hidden>
+        <button class="back" data-home>← Back</button>
+        <p class="eyebrow">YOU’RE THE HOST</p>
+        <h1>Make it a game.</h1>
+        <form id="host-form" class="panel">
+          <label
+            >Your name<input
+              name="hostName"
+              maxlength="30"
+              required
+              autocomplete="nickname"
+              placeholder="What should we call you?" /></label
+          ><label
+            >Number of categories<select name="challengeCount">
+              <option>1</option>
+              <option>2</option>
+              <option selected>3</option>
+              <option>4</option>
+              <option>5</option>
+              <option>6</option>
+              <option>7</option>
+              <option>8</option>
+              <option>9</option>
+              <option>10</option>
+            </select></label
+          ><label
+            >Your unique code <small>Optional — leave blank to generate one</small
+            ><input
+              name="gameCode"
+              maxlength="6"
+              pattern="[A-Za-z2-9]{6}"
+              autocapitalize="characters"
+              autocomplete="off"
+              placeholder="e.g. SNAP24"
+          /></label>
+          <p class="hint">Everyone gets the same randomly chosen categories. You play too.</p>
+          <button class="primary" type="submit">Create game →</button>
+          <p class="message" role="status"></p>
+        </form>
+      </section>
+      <section id="join-screen" class="screen" hidden>
+        <button class="back" data-home>← Back</button>
+        <p class="eyebrow">THERE’S ROOM FOR YOU</p>
+        <h1>Join the hunt.</h1>
+        <form id="join-form" class="panel">
+          <label
+            >Game code<input
+              name="gameCode"
+              maxlength="6"
+              minlength="6"
+              pattern="[A-Za-z2-9]{6}"
+              required
+              autocapitalize="characters"
+              autocomplete="off"
+              placeholder="SNAP24" /></label
+          ><label
+            >Your name<input
+              name="playerName"
+              maxlength="30"
+              required
+              autocomplete="nickname"
+              placeholder="Your name" /></label
+          ><button class="primary" type="submit">Join game →</button>
+          <p class="message" role="status"></p>
+        </form>
+      </section>
+      <section id="lobby" class="screen" hidden>
+        <p class="eyebrow">THE GATHERING PLACE</p>
+        <h1>You’re in.</h1>
+        <div class="code-card">
+          <span>YOUR GAME CODE</span><strong id="code"></strong
+          ><button id="copy-code" class="light">Copy code</button>
+        </div>
+        <div class="panel">
+          <h2 id="player-count">Players</h2>
+          <ul id="players" class="people"></ul>
+          <button id="start" class="primary">Everyone’s here. Start game →</button>
+          <p id="lobby-note" class="hint"></p>
+        </div>
+      </section>
+      <section id="hunt" class="screen" hidden>
+        <p class="eyebrow">LOOK A LITTLE CLOSER</p>
+        <h1>Find your moments.</h1>
+        <div id="own-progress" class="panel"></div>
+        <div id="categories" class="category-grid"></div>
+        <div id="host-progress" class="panel" hidden></div>
+      </section>
+      <section id="photo" class="screen" hidden>
+        <button id="photo-back" class="back">← Categories</button>
+        <p class="eyebrow" id="photo-number"></p>
+        <h1 id="photo-name"></h1>
+        <p id="photo-description" class="intro"></p>
+        <div class="panel">
+          <input id="camera" type="file" accept="image/*" capture="environment" hidden /><input
+            id="library"
+            type="file"
+            accept="image/*"
+            hidden
+          /><img id="preview" class="photo-preview" alt="Your photo preview" hidden />
+          <div class="button-row">
+            <button id="take" class="primary">Take photo</button
+            ><button id="choose" class="secondary">Choose photo</button>
+          </div>
+          <button id="submit-photo" class="primary" hidden>Submit photo →</button
+          ><button id="pass" class="back">Pass this category</button>
+          <p id="upload-status" class="message" role="status"></p>
+          <progress
+            id="upload-progress"
+            hidden
+            aria-label="Preparing and submitting photo"
+          ></progress>
+        </div>
+      </section>
+      <section id="waiting" class="screen" hidden>
+        <p class="eyebrow">VOTING ROOM</p>
+        <h1>Nice work.<br /><em>Take a breather.</em></h1>
+        <p class="intro">
+          Your photos are in. Voting opens for everyone once every player has finished and is here.
+        </p>
+        <div class="panel" id="waiting-progress"></div>
+      </section>
+      <section id="voting" class="screen" hidden>
+        <p id="vote-label" class="eyebrow">THE VOTE</p>
+        <h1 id="vote-title">Pick your favourite.</h1>
+        <p id="vote-budget" class="notice"></p>
+        <p id="vote-progress" class="hint"></p>
+        <div id="ballot" class="photo-grid"></div>
+        <p id="vote-message" class="message" role="status"></p>
+      </section>
+      <section id="results" class="screen" hidden>
+        <p class="eyebrow">THE RESULTS ARE IN</p>
+        <h1>And the winners are…</h1>
+        <div id="category-results" class="category-grid"></div>
+        <button id="show-finale" class="primary">Reveal the overall winning photo →</button>
+      </section>
+      <section id="finale" class="screen" hidden>
+        <p class="eyebrow">ONE HUNT. ONE WINNING SHOT.</p>
+        <h1 id="winner-title">The winning photo.</h1>
+        <div id="winner" class="panel"></div>
+        <button id="save-photo" class="secondary">Save winning photo to phone</button>
+        <p class="notice">
+          When everyone is ready to finish, all uploaded photos and game data are deleted —
+          including this winner. Save it now if you want to keep it.
+        </p>
+        <button id="finish" class="primary">Ready to finish &amp; delete game</button>
+        <p id="finish-status" class="message" role="status"></p>
+      </section>
+      <section id="closing" class="screen" hidden>
+        <p class="eyebrow">CLEARING THE DECKS</p>
+        <h1>Deleting this game.</h1>
+        <p class="intro">
+          The app is removing the photos and game records. Keep this screen open while deletion is
+          confirmed.
+        </p>
+      </section>
+    </main>
+    <div id="error" role="alert" hidden></div>
+    <footer>Find It! · DesK Apps <span>See it. Snap it. Win it.</span></footer>
+    <script src="js/config.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/app.js"></script>
+  </body>
+</html>
