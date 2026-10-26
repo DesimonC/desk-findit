@@ -1,5 +1,12 @@
 /* Find It! V2 - sole navigation controller + sole state poller */
 (function(){
+ let loadingRun=0;
+ function showBrandLoading(){
+  const run=++loadingRun,overlay=document.getElementById("brandLoading"),content=document.getElementById("appContent"),logo=document.getElementById("loadingLogo");
+  overlay.hidden=false;content.hidden=true;
+  function startTimer(){if(run!==loadingRun)return;setTimeout(()=>{if(run!==loadingRun)return;overlay.hidden=true;content.hidden=false;},2000);}
+  if(logo.complete){startTimer();}else{logo.addEventListener("load",startTimer,{once:true});logo.addEventListener("error",startTimer,{once:true});}
+ }
  const state={screen:"splashScreen",session:null,game:null,localActivity:null,pollTimer:null,polling:false,pollEnabled:false};
  function showMessage(id,message,isError){const el=document.getElementById(id);if(!el)return;el.textContent=message||"";el.classList.toggle("error",!!isError);}
  function showRetryIndicator(message){const el=document.getElementById("globalMessage");if(!el)return;el.textContent=message||"Reconnecting…";el.classList.remove("error");el.classList.add("retrying");}
@@ -13,7 +20,7 @@
  function startPolling(){stopPolling();state.pollEnabled=true;scheduleNextPoll(0);}
  function ensurePolling(){if(!state.pollEnabled&&FindItSession.valid(state.session)){state.pollEnabled=true;scheduleNextPoll(0);}}
  function stopPolling(){state.pollEnabled=false;if(state.pollTimer)clearTimeout(state.pollTimer);state.pollTimer=null;}
- function restore(){stopPolling();state.polling=false;clearRetryIndicator();FindItSession.clear();state.session=null;state.game=null;state.localActivity=null;navigate("splashScreen");}
- window.FindItApp={state,navigate,showMessage,setSession(session){state.session=FindItSession.set(session);state.game=null;state.localActivity=null;clearRetryIndicator();startPolling();},clearSession(){stopPolling();state.polling=false;clearRetryIndicator();FindItSession.clear();state.session=null;state.game=null;state.localActivity=null;navigate("splashScreen");},pollNow,startPolling,ensurePolling,stopPolling,restore};
+ function restore(){stopPolling();state.polling=false;clearRetryIndicator();FindItSession.clear();state.session=null;state.game=null;state.localActivity=null;navigate("splashScreen");showBrandLoading();}
+ window.FindItApp={state,navigate,showMessage,setSession(session){state.session=FindItSession.set(session);state.game=null;state.localActivity=null;clearRetryIndicator();startPolling();},clearSession(){stopPolling();state.polling=false;clearRetryIndicator();FindItSession.clear();state.session=null;state.game=null;state.localActivity=null;navigate("splashScreen");showBrandLoading();},pollNow,startPolling,ensurePolling,stopPolling,restore};
  document.addEventListener("DOMContentLoaded",restore);
 })();
