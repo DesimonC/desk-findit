@@ -1,41 +1,41 @@
-# Find It! V2
+# Find It! by DesK Apps
 
-**See it. Snap it. Win it.**
+Multiplayer photo hunt: **See it. Snap it. Win it.**
 
-Clean V2 rebuild of Find It!, a multiplayer photo-hunt game.
+The existing Apps Script backend remains selected in `js/config.js` while the
+Supabase replacement is staged. The target Find It project is
+`rqbwdxsxxqnyqigikrht`; it must be accessible and deployed before cutover.
+See [deployment status and checks](docs/SUPABASE_DEPLOYMENT.md).
 
-## Authoritative game states
+## App
 
-`WAITING -> PLAYING -> VOTING -> FINISHED`
+- Existing DesK Apps Find It logo on a two-second loading screen and at the top.
+- Host/join lobby, photo challenges, progress, anonymous voting and results.
+- Supabase preview: append `?backend=supabase` after the function is deployed.
+- Supabase game states: `WAITING → PLAYING → VOTING → RUNOFF (if needed) → FINISHED`.
+- Supabase rules: most-voted individual photo wins; one final tie-break vote;
+  first accepted upload resolves a remaining tie. Host closure deletes the game
+  and every game photo. Expiry cleanup requires the configured scheduled job.
+- Legacy Apps Script retains its existing four-character codes, challenge-win
+  scoring and winner archive until retired. The staged Supabase version uses
+  six-character codes and does not retain winner records.
 
-UI activities such as opening a challenge or taking a photo are not server game states.
+## Source
 
-## Core rules
+- `index.html`, `css/`, `js/`: static frontend and transport adapters.
+- `supabase/functions/findit-api/`: game engine and authenticated guest API.
+- `supabase/schema.sql`: proposed bootstrap, not applied to the hosted project.
+- `apps-script/`, `js/legacy-api.js`: retained for the active legacy deployment.
+- `tests/`: game-rule, request/authentication and two-browser flow checks.
 
-- Host is also a player.
-- Six-character game codes.
-- Host chooses 1-10 challenges; default 1.
-- No game timer.
-- Each challenge is completed by `SUBMITTED` or `PASSED`.
-- Voting is anonymous until results.
-- One vote per player per challenge requiring a vote.
-- A player may vote for their own photo only once per game.
-- Zero-photo challenges require no vote.
-- Single-photo challenges are uncontested and require no vote.
-- Ties create joint challenge/overall winners.
-- On finish, winner records and retained winning photo(s) are preserved; all other game rows/photos are removed.
+## Development checks
 
-## Structure
+```sh
+npm ci
+npm test
+npx playwright install chromium
+npm run test:browser
+```
 
-- `index.html` - all application screens
-- `css/app.css` - responsive UI
-- `js/config.js` - deployment configuration
-- `js/api.js` - the only Apps Script HTTP client
-- `js/session.js` - local player session
-- `js/app.js` - the only screen/navigation controller and central polling
-- `js/game.js` - create/join/lobby actions
-- `apps-script/Main.gs` - JSON router
-- `apps-script/Data.gs` - sheet/schema helpers
-- `apps-script/Games.gs` - create/join/state foundation
-
-Later V2 phases add challenges/photos, voting, results and cleanup without changing these ownership rules.
+The automated adapter is local test infrastructure. Live database, Storage,
+security-advisor and real-phone checks remain required before release.

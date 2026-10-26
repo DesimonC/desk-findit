@@ -9,6 +9,7 @@
   loading=true;
   try{
    const data=await FindItAPI.get("getChallenges",{gameCode:session.gameCode,playerId:session.playerId,_t:Date.now()});
+   if(FindItApp.state.game?.status!=="PLAYING")return;
    render(data);
   }catch(error){
    console.warn("[FindIt Challenges] LOAD FAILED - existing cards preserved",error);
@@ -66,6 +67,7 @@
    document.getElementById("completionTitle").textContent="All done!";
    document.getElementById("completionText").textContent=data.everyoneComplete?"Everyone has completed the challenges.":"You've completed all challenges. Waiting for the other players...";
   }
+  if(FindItAPI.isSupabase&&done===total&&total>0){document.getElementById("waitingProgress").appendChild(document.getElementById("hostProgress"));FindItApp.navigate("waitingScreen");}
   if(FindItApp.state.session&&FindItApp.state.session.isHost&&FindItApp.state.game&&FindItApp.state.game.status==="PLAYING")startHostProgressRefresh();else stopHostProgressRefresh();
   FindItApp.showMessage("challengeMessage","",false);
  }
