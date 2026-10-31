@@ -24,5 +24,5 @@
  function stopPolling(){state.pollEnabled=false;if(state.pollTimer)clearTimeout(state.pollTimer);state.pollTimer=null;}
  function restore(){stopPolling();state.polling=false;clearRetryIndicator();FindItSession.clear();state.session=null;state.game=null;state.localActivity=null;updateCountdown();navigate("splashScreen");showBrandLoading();}
  window.FindItApp={state,navigate,showMessage,setSession(session){state.session=FindItSession.set(session);state.game=null;state.localActivity=null;clearRetryIndicator();startPolling();},clearSession(){stopPolling();state.polling=false;clearRetryIndicator();FindItSession.clear();state.session=null;state.game=null;state.localActivity=null;navigate("splashScreen");showBrandLoading();},pollNow,startPolling,ensurePolling,stopPolling,restore};
- document.addEventListener("DOMContentLoaded",restore);
+ document.addEventListener("DOMContentLoaded",()=>{const saved=FindItSession.get();restore();if(FindItSession.valid(saved)&&saved.sessionToken){state.session=FindItSession.set(saved);startPolling();}});
 })();
