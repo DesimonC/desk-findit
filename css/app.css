@@ -21,3 +21,7 @@ html{overflow-x:hidden;-webkit-text-size-adjust:100%}body{overflow-x:hidden}main
 @media(max-width:330px){.app-shell{padding-left:10px;padding-right:10px}.pack-grid,.invite-actions,.card-grid,.vote-grid{grid-template-columns:1fr}.pack-card{min-height:0}.game-countdown{padding:10px;gap:6px}.game-countdown span{font-size:.8rem}}
 @media(orientation:landscape) and (max-height:520px){.hero,.screen-heading,.screen-heading.compact{padding-top:12px;padding-bottom:14px}.app-brand img{width:72px}.screen{min-height:auto}.photo-preview-wrap{aspect-ratio:4/3;max-height:55vh}}
 @media(prefers-reduced-motion:reduce){.progress-bar,.pack-card{transition:none}}
+
+/* Slightly larger Find It! logo on lobby and game screens */
+.app-brand img{width:clamp(120px,32vw,144px);height:auto;max-width:100%}
+@media(orientation:landscape) and (max-height:520px){.app-brand img{width:96px}}
