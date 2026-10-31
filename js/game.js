@@ -15,8 +15,8 @@
   document.getElementById("lobbyMessage").textContent=isHost?"Waiting for players to join…":"Waiting for the host to start the game…";
  }
  async function createGame(){
-  freshStart();const hostName=value("hostNameInput"),challengeCount=Number(document.getElementById("challengeCountInput").value),packId=document.querySelector('input[name="challengePack"]:checked')?.value||"classic";FindItApp.showMessage("hostSetupMessage","Creating game...",false);
-  try{const data=await FindItAPI.post("createGame",{hostName,challengeCount,packId});showImmediateLobby(data,true);FindItApp.setSession({gameCode:data.game.gameCode,playerId:data.player.playerId,playerName:data.player.name,sessionToken:data.player.sessionToken,isHost:true});}
+  freshStart();const hostName=value("hostNameInput"),challengeCount=Number(document.getElementById("challengeCountInput").value),packId=document.querySelector('input[name="challengePack"]:checked')?.value||"classic",timeLimitRaw=value("gameTimeLimitInput"),timeLimitMinutes=timeLimitRaw===""?null:Number(timeLimitRaw);if(timeLimitMinutes!==null&&(!Number.isInteger(timeLimitMinutes)||timeLimitMinutes<1||timeLimitMinutes>240)){FindItApp.showMessage("hostSetupMessage","Enter 1–240 minutes, or leave the time limit blank.",true);return;}FindItApp.showMessage("hostSetupMessage","Creating game...",false);
+  try{const data=await FindItAPI.post("createGame",{hostName,challengeCount,packId,timeLimitMinutes});showImmediateLobby(data,true);FindItApp.setSession({gameCode:data.game.gameCode,playerId:data.player.playerId,playerName:data.player.name,sessionToken:data.player.sessionToken,isHost:true});}
   catch(error){FindItApp.showMessage("hostSetupMessage",error.message,true);}
  }
  async function joinGame(){
