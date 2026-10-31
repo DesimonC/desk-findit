@@ -12,6 +12,7 @@
         gameCode: String(session.gameCode || "").toUpperCase(),
         playerId: String(session.playerId || ""),
         playerName: String(session.playerName || ""),
+        sessionToken: String(session.sessionToken || ""),
         isHost: session.isHost === true
       }));
       return this.get();
