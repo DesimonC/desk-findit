@@ -20,8 +20,8 @@
   catch(error){FindItApp.showMessage("hostSetupMessage",error.message,true);}
  }
  async function joinGame(){
-  freshStart();const gameCode=value("joinGameCodeInput").toUpperCase(),playerName=value("joinNameInput");if(!/^[A-Z2-9]{6}$/.test(gameCode)){FindItApp.showMessage("joinMessage","Enter the 6-character game code.",true);return;}FindItApp.showMessage("joinMessage","Joining...",false);
-  try{const data=await FindItAPI.post("joinGame",{gameCode,playerName});showImmediateLobby(data,false);FindItApp.setSession({gameCode:data.game.gameCode,playerId:data.player.playerId,playerName:data.player.name,sessionToken:data.player.sessionToken,isHost:false});}
+  const saved=FindItSession.get();const gameCode=value("joinGameCodeInput").toUpperCase(),playerName=value("joinNameInput");if(!/^[A-Z2-9]{6}$/.test(gameCode)){FindItApp.showMessage("joinMessage","Enter the 6-character game code.",true);return;}FindItApp.showMessage("joinMessage","Joining...",false);
+  try{const data=await FindItAPI.post("joinGame",{gameCode,playerName,sessionToken:saved?.gameCode===gameCode&&saved?.playerName?.toLocaleLowerCase()===playerName.toLocaleLowerCase()?saved.sessionToken:""});FindItApp.setSession({gameCode:data.game.gameCode,playerId:data.player.playerId,playerName:data.player.name,sessionToken:data.player.sessionToken,isHost:data.player.isHost===true});if(data.rejoined)FindItApp.showMessage("joinMessage","Welcome back! Restoring your game…",false);}
   catch(error){FindItApp.showMessage("joinMessage",error.message,true);}
  }
  async function startGame(){const session=FindItApp.state.session;if(!session||!session.isHost)return;FindItApp.showMessage("lobbyMessage","Starting game...",false);try{await FindItAPI.post("startGame",{gameCode:session.gameCode,playerId:session.playerId});await FindItApp.pollNow();}catch(error){FindItApp.showMessage("lobbyMessage",error.message,true);}}
