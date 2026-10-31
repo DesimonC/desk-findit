@@ -2,8 +2,12 @@
 (function(){
  function value(id){return String(document.getElementById(id).value||"").trim();}
  function freshStart(){FindItSession.clear();FindItApp.state.session=null;FindItApp.state.game=null;FindItApp.state.localActivity=null;if(FindItApp.stopPolling)FindItApp.stopPolling();}
+ function inviteUrl(){const code=FindItApp.state.session?.gameCode||document.getElementById("lobbyGameCode").textContent.trim();const url=new URL(window.location.href);url.search="";url.hash="";url.searchParams.set("join",code);return url.toString();}
+ function inviteText(){return "Come play Find It! with me! Join my photo challenge game using code "+(FindItApp.state.session?.gameCode||document.getElementById("lobbyGameCode").textContent.trim())+". Open: "+inviteUrl();}
+ function inviteStatus(message){FindItApp.showMessage("inviteMessage",message,false);}
+ function updateInvite(isHost){document.getElementById("invitePanel").hidden=!isHost;}
  function showImmediateLobby(data,isHost){
-  FindItApp.navigate("lobbyScreen");
+  FindItApp.navigate("lobbyScreen");updateInvite(isHost);
   document.getElementById("lobbyGameCode").textContent=data.game.gameCode;
   const list=document.getElementById("lobbyPlayers");list.innerHTML="";
   const li=document.createElement("li");li.textContent=data.player.name+(isHost?" (Host)":"");list.appendChild(li);
@@ -21,5 +25,10 @@
   catch(error){FindItApp.showMessage("joinMessage",error.message,true);}
  }
  async function startGame(){const session=FindItApp.state.session;if(!session||!session.isHost)return;FindItApp.showMessage("lobbyMessage","Starting game...",false);try{await FindItAPI.post("startGame",{gameCode:session.gameCode,playerId:session.playerId});await FindItApp.pollNow();}catch(error){FindItApp.showMessage("lobbyMessage",error.message,true);}}
- document.addEventListener("DOMContentLoaded",function(){document.getElementById("hostButton").addEventListener("click",()=>{freshStart();FindItApp.navigate("hostSetupScreen");});document.getElementById("joinButton").addEventListener("click",joinGame);document.getElementById("createGameButton").addEventListener("click",createGame);document.getElementById("startGameButton").addEventListener("click",startGame);document.getElementById("hostBackButton").addEventListener("click",()=>FindItApp.navigate("splashScreen"));document.querySelectorAll("[data-home]").forEach(button=>button.addEventListener("click",()=>FindItApp.clearSession()));});
+ document.addEventListener("DOMContentLoaded",function(){const code=new URLSearchParams(window.location.search).get("join");if(code&&/^[A-Z2-9]{6}$/i.test(code)){document.getElementById("joinGameCodeInput").value=code.toUpperCase();document.getElementById("joinMessage").textContent="You have been invited! Enter your name and tap Join Game.";}
+ document.getElementById("inviteWhatsapp").addEventListener("click",()=>window.open("https://wa.me/?text="+encodeURIComponent(inviteText()),"_blank","noopener,noreferrer"));
+ document.getElementById("inviteSms").addEventListener("click",()=>{window.location.href="sms:?body="+encodeURIComponent(inviteText());});
+ document.getElementById("inviteShare").addEventListener("click",async()=>{if(navigator.share){try{await navigator.share({title:"Join my Find It! game",text:inviteText()});}catch(e){if(e.name!=="AbortError")inviteStatus("Could not open sharing. Try Copy invite.");}}else{try{await navigator.clipboard.writeText(inviteText());inviteStatus("Invite copied — paste it into any message.");}catch(e){inviteStatus("Sharing unavailable. Use WhatsApp or text message.");}}});
+ document.getElementById("inviteCopy").addEventListener("click",async()=>{try{await navigator.clipboard.writeText(inviteText());inviteStatus("Invite copied!");}catch(e){inviteStatus("Copy unavailable. Try Share link.");}});
+document.getElementById("hostButton").addEventListener("click",()=>{freshStart();FindItApp.navigate("hostSetupScreen");});document.getElementById("joinButton").addEventListener("click",joinGame);document.getElementById("createGameButton").addEventListener("click",createGame);document.getElementById("startGameButton").addEventListener("click",startGame);document.getElementById("hostBackButton").addEventListener("click",()=>FindItApp.navigate("splashScreen"));document.querySelectorAll("[data-home]").forEach(button=>button.addEventListener("click",()=>FindItApp.clearSession()));});
 })();
