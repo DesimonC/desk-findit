@@ -11,8 +11,8 @@
   document.getElementById("lobbyMessage").textContent=isHost?"Waiting for players to join…":"Waiting for the host to start the game…";
  }
  async function createGame(){
-  freshStart();const hostName=value("hostNameInput"),challengeCount=Number(document.getElementById("challengeCountInput").value);FindItApp.showMessage("hostSetupMessage","Creating game...",false);
-  try{const data=await FindItAPI.post("createGame",{hostName,challengeCount});showImmediateLobby(data,true);FindItApp.setSession({gameCode:data.game.gameCode,playerId:data.player.playerId,playerName:data.player.name,isHost:true});}
+  freshStart();const hostName=value("hostNameInput"),challengeCount=Number(document.getElementById("challengeCountInput").value),packId=value("challengePackInput");FindItApp.showMessage("hostSetupMessage","Creating game...",false);
+  try{const data=await FindItAPI.post("createGame",{hostName,challengeCount,packId});showImmediateLobby(data,true);FindItApp.setSession({gameCode:data.game.gameCode,playerId:data.player.playerId,playerName:data.player.name,isHost:true});}
   catch(error){FindItApp.showMessage("hostSetupMessage",error.message,true);}
  }
  async function joinGame(){
