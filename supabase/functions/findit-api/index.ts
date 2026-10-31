@@ -28,7 +28,23 @@ Deno.serve(async(req)=>{
   if(action==="joinGame"){
    const code=String(input.gameCode||"").toUpperCase(),name=String(input.playerName||"").trim().slice(0,40);
    if(!/^[A-Z2-9]{6}$/.test(code)||!name)return fail("Enter a valid code and name.");
-   const game=await one("games","code",code);if(!game||game.status!=="WAITING")return fail("Game not found or already started.",404);
+   const game=await one("games","code",code);if(!game||game.status==="FINISHED")return fail("Game not found or finished.",404);
+   const {data:matches,error:lookupError}=await db.from("players").select("id,name,session_token_hash").eq("game_id",game.id);
+   if(lookupError)throw lookupError;
+   const existing=(matches||[]).filter(p=>p.name.trim().toLocaleLowerCase()===name.toLocaleLowerCase());
+   if(existing.length>1)return fail("Multiple players have that name. Ask the host for help.",409);
+   if(existing.length===1){
+    const p=existing[0],provided=String(input.sessionToken||"");
+    // A known valid session keeps its identity; name-only recovery rotates the token.
+    if(provided&&await sha(provided)===p.session_token_hash)
+     return reply({ok:true,data:{game:{gameCode:code,status:game.status},player:{playerId:p.id,name:p.name,sessionToken:provided,isHost:game.host_player_id===p.id},rejoined:true}});
+    const recoveryToken=crypto.randomUUID()+crypto.randomUUID();
+    const {data:updated,error:recoveryError}=await db.from("players").update({session_token_hash:await sha(recoveryToken)}).eq("id",p.id).eq("session_token_hash",p.session_token_hash).select("id").maybeSingle();
+    if(recoveryError)throw recoveryError;
+    if(!updated)return fail("This player has just rejoined. Please try again.",409);
+    return reply({ok:true,data:{game:{gameCode:code,status:game.status},player:{playerId:p.id,name:p.name,sessionToken:recoveryToken,isHost:game.host_player_id===p.id},rejoined:true}});
+   }
+   if(game.status!=="WAITING")return fail("This game has started. Rejoin using your original player name.",409);
    const token=crypto.randomUUID()+crypto.randomUUID();
    const {data:player,error}=await db.from("players").insert({game_id:game.id,name,session_token_hash:await sha(token)}).select().single();if(error)throw error;
    return reply({ok:true,data:{game:{gameCode:code},player:{playerId:player.id,name:player.name,sessionToken:token}}});
