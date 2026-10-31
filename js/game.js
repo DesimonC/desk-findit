@@ -16,7 +16,7 @@
   catch(error){FindItApp.showMessage("hostSetupMessage",error.message,true);}
  }
  async function joinGame(){
-  freshStart();const gameCode=value("joinGameCodeInput").toUpperCase(),playerName=value("joinNameInput");if(!/^[A-Z2-9]{4}$/.test(gameCode)){FindItApp.showMessage("joinMessage","Enter the 4-character game code.",true);return;}FindItApp.showMessage("joinMessage","Joining...",false);
+  freshStart();const gameCode=value("joinGameCodeInput").toUpperCase(),playerName=value("joinNameInput");if(!/^[A-Z2-9]{6}$/.test(gameCode)){FindItApp.showMessage("joinMessage","Enter the 6-character game code.",true);return;}FindItApp.showMessage("joinMessage","Joining...",false);
   try{const data=await FindItAPI.post("joinGame",{gameCode,playerName});showImmediateLobby(data,false);FindItApp.setSession({gameCode:data.game.gameCode,playerId:data.player.playerId,playerName:data.player.name,sessionToken:data.player.sessionToken,isHost:false});}
   catch(error){FindItApp.showMessage("joinMessage",error.message,true);}
  }
