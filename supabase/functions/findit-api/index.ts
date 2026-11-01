@@ -110,6 +110,9 @@ Deno.serve(async(req)=>{
    const {error}=await db.from("games").update({status:"VOTING"}).eq("id",game.id).eq("status","PLAYING");if(error)throw error;
    return reply({ok:true,data:{started:true}});
   }
+  const votingRoundCount=rounds.filter(r=>available(r).length>1).length;
+  const selfVoteLimit=Math.floor(votingRoundCount/2);
+  const selfVotesFor=(pid:string)=>votes.filter(v=>v.round===1&&v.voter_id===pid&&entries.some(e=>e.id===v.entry_id&&e.player_id===pid)).length;
   const required=(r:any,pid:string)=>available(r).length>1&&!votes.some(v=>v.round===1&&v.voter_id===pid&&v.game_challenge_id===r.id);
   const completeVote=(pid:string)=>rounds.every(r=>!required(r,pid));
   const allVotingComplete=players.every(p=>completeVote(p.id));
@@ -117,14 +120,14 @@ Deno.serve(async(req)=>{
    if(game.status!=="VOTING")return fail("Not voting yet.",409);
    const r=rounds.find(r=>required(r,player.id));
    if(!r)return reply({ok:true,data:{complete:true,allVotingComplete}});
-   const selfVoteUsed=votes.some(v=>v.round===1&&v.voter_id===player.id&&entries.some(e=>e.id===v.entry_id&&e.player_id===player.id));
-   return reply({ok:true,data:{complete:false,selfVoteUsed,challenge:{challengeId:r.id,challengeNumber:r.ordinal,name:r.challenges?.title||""},options:await Promise.all(available(r).map(async(e,i)=>({optionId:e.id,label:"Photo "+(i+1),photoUrl:await signed(e.storage_path)})))}});
+   const selfVotesUsed=selfVotesFor(player.id);
+   return reply({ok:true,data:{complete:false,selfVotesUsed,selfVoteLimit,challenge:{challengeId:r.id,challengeNumber:r.ordinal,name:r.challenges?.title||""},options:await Promise.all(available(r).map(async(e,i)=>({optionId:e.id,label:"Photo "+(i+1),photoUrl:await signed(e.storage_path)})))}});
   }
   if(action==="castVote"){
    if(game.status!=="VOTING")return fail("Voting is not open.",409);
    const r=rounds.find(r=>r.id===String(input.challengeId||""));const e=entries.find(e=>e.id===String(input.entryId||""));
    if(!r||!e||e.game_challenge_id!==r.id||e.status!=="SUBMITTED"||!required(r,player.id))return fail("Invalid or duplicate vote.",409);
-   if(e.player_id===player.id&&votes.some(v=>v.round===1&&v.voter_id===player.id&&entries.some(x=>x.id===v.entry_id&&x.player_id===player.id)))return fail("Only one self-vote per game.",403);
+   if(e.player_id===player.id&&selfVotesFor(player.id)>=selfVoteLimit)return fail("You have reached your self-vote allowance.",403);
    const {error}=await db.from("votes").insert({game_id:game.id,game_challenge_id:r.id,voter_id:player.id,entry_id:e.id,round:1});if(error)throw error;
    return reply({ok:true,data:{voted:true}});
   }
