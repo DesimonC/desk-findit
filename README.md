@@ -19,7 +19,7 @@ UI activities such as opening a challenge or taking a photo are not server game 
 - Each challenge is completed by `SUBMITTED` or `PASSED`.
 - Voting is anonymous until results.
 - One vote per player per challenge requiring a vote.
-- A player may vote for their own photo only once per game.
+- A player may vote for their own photos in up to half the categories with at least two submitted photos, rounded down. This rule takes effect after the updated Apps Script web app is deployed.
 - Zero-photo challenges require no vote.
 - Single-photo challenges are uncontested and require no vote.
 - Ties create joint challenge/overall winners.

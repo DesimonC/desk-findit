@@ -27,12 +27,13 @@ function getVotingStateV2(data){
   const votes=rowsAsObjects_("Votes").filter(r=>String(r.GameCode)===gameCode&&String(r.VoterPlayerId)===playerId),voted={};
   votes.forEach(v=>voted[String(v.ChallengeId)]=true);
   const next=challenges.find(c=>voteable[String(c.ChallengeId)]&&!voted[String(c.ChallengeId)]);
-  const selfVoteUsed=votes.some(v=>bool_(v.IsSelfVote));
-  if(!next)return {complete:true,selfVoteUsed:selfVoteUsed,allVotingComplete:allVotingCompleteV2_(gameCode),voteableChallengeCount:voteableIds.length};
+  const selfVotesUsed=votes.filter(v=>bool_(v.IsSelfVote)).length;
+  const selfVoteUsed=selfVotesUsed>0,selfVoteLimit=selfVoteLimitV2_(voteableIds.length);
+  if(!next)return {complete:true,selfVoteUsed:selfVoteUsed,selfVotesUsed:selfVotesUsed,selfVoteLimit:selfVoteLimit,allVotingComplete:allVotingCompleteV2_(gameCode),voteableChallengeCount:voteableIds.length};
   const challengeEntries=entries.filter(e=>String(e.ChallengeId)===String(next.ChallengeId));
   if(challengeEntries.length<2)throw apiError_("VOTING_DATA_CHANGED","The voting photos changed after voting started. Please retry.");
   const options=shuffle_(challengeEntries).map((e,i)=>({optionId:String(e.EntryId),label:"Photo "+(i+1),photoUrl:photoDataUrlV2_(String(e.PhotoReference))}));
-  return {complete:false,selfVoteUsed:selfVoteUsed,voteableChallengeCount:voteableIds.length,challenge:{challengeId:String(next.ChallengeId),challengeNumber:Number(next.ChallengeNumber),name:String(next.Name),description:String(next.Description||"")},options:options};
+  return {complete:false,selfVoteUsed:selfVoteUsed,selfVotesUsed:selfVotesUsed,selfVoteLimit:selfVoteLimit,voteableChallengeCount:voteableIds.length,challenge:{challengeId:String(next.ChallengeId),challengeNumber:Number(next.ChallengeNumber),name:String(next.Name),description:String(next.Description||"")},options:options};
 }
 
 function castVoteV2(data){
@@ -48,7 +49,11 @@ function castVoteV2(data){
     const entry=eligible.find(e=>String(e.EntryId)===entryId);
     if(!entry)throw apiError_("ENTRY_NOT_FOUND","That photo is not available for this vote.");
     const isSelf=String(entry.PlayerId)===playerId;
-    if(isSelf&&findOne_("Votes",r=>String(r.GameCode)===gameCode&&String(r.VoterPlayerId)===playerId&&bool_(r.IsSelfVote)))throw apiError_("SELF_VOTE_USED","You have already used your one self-vote for this game.");
+    if(isSelf){
+      const limit=selfVoteLimitV2_(Object.keys(voteableChallengeIdsV2_(gameCode)).length);
+      const used=rowsAsObjects_("Votes").filter(v=>String(v.GameCode)===gameCode&&String(v.VoterPlayerId)===playerId&&bool_(v.IsSelfVote)).length;
+      if(used>=limit)throw apiError_("SELF_VOTE_USED","You have reached your self-vote allowance for this game.");
+    }
     appendObject_("Votes",{VoteId:id_("V"),GameCode:gameCode,ChallengeId:challengeId,VoterPlayerId:playerId,EntryId:entryId,PhotoOwnerPlayerId:String(entry.PlayerId),IsSelfVote:isSelf,VotedAt:new Date()});
     return {accepted:true,isSelfVote:isSelf,votingComplete:playerVotingCompleteV2_(gameCode,playerId),allVotingComplete:allVotingCompleteV2_(gameCode)};
   }finally{lock.releaseLock();}
@@ -61,6 +66,10 @@ function getVotingProgressV2(data){
   if(!voteableCount)throw apiError_("NO_CONTESTED_CHALLENGES","No contested challenges are available for voting.");
   const players=rowsAsObjects_("Players").filter(r=>String(r.GameCode)===gameCode);
   return {voteableChallengeCount:voteableCount,players:players.map(p=>({name:String(p.Name),isHost:bool_(p.IsHost),complete:playerVotingCompleteV2_(gameCode,String(p.PlayerId))})),allVotingComplete:allVotingCompleteV2_(gameCode)};
+}
+
+function selfVoteLimitV2_(votingRoundCount){
+  return Math.floor(votingRoundCount/2);
 }
 
 function validVotingEntriesV2_(gameCode){

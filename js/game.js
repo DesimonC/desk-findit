@@ -22,8 +22,16 @@
  }
  async function startGame(){const session=FindItApp.state.session;if(!session||!session.isHost)return;FindItApp.showMessage("lobbyMessage","Starting game...",false);try{await FindItAPI.post("startGame",{gameCode:session.gameCode,playerId:session.playerId});await FindItApp.pollNow();}catch(error){FindItApp.showMessage("lobbyMessage",error.message,true);}}
  document.addEventListener("DOMContentLoaded",function(){
-  document.getElementById("completeRulesButton").addEventListener("click",()=>{
+  document.getElementById("completeRulesButton").addEventListener("click",async ()=>{
    document.getElementById("completeRulesDialog").showModal();
+   try{
+    const health=await FindItAPI.get("health");
+    const updatedRule=health.selfVoteRule==="half-rounded-down";
+    document.getElementById("legacySelfVoteRule").hidden=updatedRule;
+    document.getElementById("halfSelfVoteRule").hidden=!updatedRule;
+   }catch(error){
+    console.warn("[FindIt Game] Could not check the server voting rule.",error);
+   }
   });
  document.getElementById("hostButton").addEventListener("click",()=>{freshStart();FindItApp.navigate("hostSetupScreen");});document.getElementById("joinButton").addEventListener("click",joinGame);document.getElementById("createGameButton").addEventListener("click",createGame);document.getElementById("startGameButton").addEventListener("click",startGame);document.getElementById("hostBackButton").addEventListener("click",()=>FindItApp.navigate("splashScreen"));document.querySelectorAll("[data-home]").forEach(button=>button.addEventListener("click",()=>FindItApp.clearSession()));});
 })();
