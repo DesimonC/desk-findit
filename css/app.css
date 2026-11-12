@@ -7,3 +7,66 @@
 .app-brand{display:flex;justify-content:center;padding:4px 0 12px}
 .app-brand img{display:block;width:104px;height:auto;object-fit:contain}
 #splashScreen .hero{padding-top:20px}
+
+.splash-packs {
+  margin-top: 1rem;
+}
+
+.splash-packs h2,
+.rules-dialog h2 {
+  margin: 0 0 .75rem;
+  font-size: 1.25rem;
+}
+
+.splash-pack-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+  gap: .5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.splash-pack-list li {
+  display: grid;
+  gap: .25rem;
+  padding: .75rem .5rem;
+  border: 1px solid rgba(255, 255, 255, .18);
+  border-radius: 14px;
+  text-align: center;
+}
+
+.splash-pack-list li > span:last-child {
+  font-size: .85rem;
+}
+
+.splash-packs p {
+  margin: .75rem 0 0;
+  font-size: .85rem;
+}
+
+.rules-dialog {
+  width: min(calc(100% - 2rem), 32rem);
+  max-height: 85dvh;
+  overflow: auto;
+  background: #17172a;
+  color: inherit;
+}
+
+.rules-dialog::backdrop {
+  background: rgba(0, 0, 0, .75);
+}
+
+.rules-dialog ol {
+  padding-left: 1.5rem;
+  line-height: 1.5;
+}
+
+.rules-dialog li + li {
+  margin-top: .75rem;
+}
+
+.splash-pack-list .pack-art {
+  font-size: 2rem;
+  line-height: 1.2;
+}
