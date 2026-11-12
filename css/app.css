@@ -78,3 +78,36 @@ html{overflow-x:hidden;-webkit-text-size-adjust:100%}body{overflow-x:hidden}main
 .home-rules li + li {
   margin-top: .75rem;
 }
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.game-content {
+  flex: 1;
+}
+
+.site-footer {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, .2);
+  text-align: center;
+  font-size: .85rem;
+  line-height: 1.7;
+}
+
+.site-footer a {
+  display: inline-block;
+  color: inherit;
+}
+
+.site-footer p {
+  margin: .5rem 0 0;
+}
+
+.results-privacy {
+  text-align: center;
+}
