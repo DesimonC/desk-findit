@@ -24,21 +24,6 @@
   }
   box.innerHTML=html;
  }
- async function loadLatestWinner(){
-  const panel=document.getElementById("latestWinnerPanel");
-  if(!panel)return;
-  try{
-   const data=await FindItAPI.get("getLatestWinner",{_t:Date.now()});
-   if(!data||!data.hasWinner||!data.photoUrl){panel.hidden=true;return;}
-   document.getElementById("latestWinnerPhoto").src=data.photoUrl;
-   document.getElementById("latestWinnerName").textContent=data.winnerName||"Winner";
-   document.getElementById("latestWinnerChallenge").textContent=data.challengeName?"Winning photo · "+data.challengeName:"Winning photo";
-   panel.hidden=false;
-  }catch(error){
-   console.warn("[FindIt Results] Could not load latest winner for splash.",error);
-   panel.hidden=true;
-  }
- }
  async function endGame(){
   const b=document.getElementById("endGameButton");
   if(b)b.disabled=true;
@@ -56,7 +41,6 @@
    loaded=false;
    FindItApp.navigate("splashScreen");
    FindItApp.showMessage("resultsMessage","",false);
-   await loadLatestWinner();
   }catch(error){
    FindItApp.showMessage("resultsMessage",error.message,true);
    if(b)b.disabled=false;
@@ -66,7 +50,6 @@
  document.addEventListener("DOMContentLoaded",()=>{
   const b=document.getElementById("endGameButton");
   if(b)b.addEventListener("click",endGame);
-  loadLatestWinner();
  });
- window.FindItResults={load,loadLatestWinner};
+ window.FindItResults={load};
 })();
