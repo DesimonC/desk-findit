@@ -23,7 +23,7 @@ UI activities such as opening a challenge or taking a photo are not server game 
 - Zero-photo challenges require no vote.
 - Single-photo challenges are uncontested and require no vote.
 - Ties create joint challenge/overall winners.
-- On finish, winner records and retained winning photo(s) are preserved; all other game rows/photos are removed.
+- When the host ends a finished game, winner records are retained but all game photos are removed, including winning photos; photo references are cleared.
 
 ## Structure
 
