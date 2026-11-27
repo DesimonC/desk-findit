@@ -20,6 +20,7 @@ A multiplayer photo-hunt game. The live app now uses Caroline's Supabase project
 - New players join with the game code or host invitation while the lobby is waiting. Each player receives a private rejoin link with an unguessable token; keep it private. Reopening it restores that player even after the game starts.
 - During voting, any player can privately report a photo for a possible Photo Safety Agreement breach. The host reviews reports in the voting screen and can remove the photo, dismiss the report, warn the player, or block them from the current game before revealing results.
 - Warnings appear in the player's active game or on their next private-link visit. A blocked player cannot rejoin the match; their private link displays the block notice. Blocking removes their photos and votes from the active game.
+- Google Cloud Vision SafeSearch integration is prepared but not yet active in production. Before deployment, configure `GOOGLE_CLOUD_VISION_API_KEY` as a Supabase Edge Function secret and update the privacy notice. The screening will reject images flagged for adult, suggestive, violent, or medical content and fail closed if the scanner is unavailable; it cannot identify every safety concern.
 
 ## Supabase
 

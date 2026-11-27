@@ -3,6 +3,7 @@ import { canSkipVoting, collectNestedStoragePaths, everyPlayerVoted, everyoneCom
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const VISION_API_KEY = Deno.env.get("GOOGLE_CLOUD_VISION_API_KEY") || "";
 const BUCKET = "findit-game-photos";
 const cors = {"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"authorization, apikey, content-type, x-client-info, x-findit-rejoin-token","Access-Control-Allow-Methods":"GET, POST, OPTIONS","Content-Type":"application/json"};
 const enc = (s:string)=>encodeURIComponent(s);
@@ -22,6 +23,24 @@ function newRejoinToken(){return Array.from(crypto.getRandomValues(new Uint8Arra
 async function hashRejoinToken(token:string){const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(token));return Array.from(new Uint8Array(digest),x=>x.toString(16).padStart(2,"0")).join("").toUpperCase();}
 function norm(v:unknown){return String(v||"").trim().toUpperCase();}
 function activePlayers(s:any){return s.players.filter((p:any)=>!p.blocked);}
+async function screenPhoto(base64:string){
+ if(!VISION_API_KEY)fail("SCREENING_UNAVAILABLE","Photo safety screening is temporarily unavailable. Your photo was not uploaded. Please try again later or pass this challenge.");
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);
+ try{
+  const response=await fetch("https://vision.googleapis.com/v1/images:annotate?key="+encodeURIComponent(VISION_API_KEY),{method:"POST",headers:{"Content-Type":"application/json"},signal:controller.signal,body:JSON.stringify({requests:[{image:{content:base64},features:[{type:"SAFE_SEARCH_DETECTION"}]}]})});
+  if(!response.ok){console.error("[FindIt API] Photo screening service returned HTTP",response.status);fail("SCREENING_UNAVAILABLE","Photo safety screening is temporarily unavailable. Your photo was not uploaded. Please try again later or pass this challenge.");}
+  const payload=await response.json(),annotation=payload?.responses?.[0]?.safeSearchAnnotation;
+  if(!annotation){console.error("[FindIt API] Photo screening returned no safety annotation");fail("SCREENING_UNAVAILABLE","Photo safety screening could not check this image. Your photo was not uploaded. Please try again later or pass this challenge.");}
+  const levels:any={UNKNOWN:0,VERY_UNLIKELY:1,UNLIKELY:2,POSSIBLE:3,LIKELY:4,VERY_LIKELY:5};
+  const flagged=["adult","racy","violence","medical"].filter(category=>(levels[String(annotation[category]||"UNKNOWN")]||0)>=4);
+  if(flagged.length)fail("PHOTO_SCREENED","This photo was flagged by the safety check and was not added. Please choose a different photo or pass this challenge.");
+  return {screened:true};
+ }catch(error:any){
+  if(error?.code==="PHOTO_SCREENED"||error?.code==="SCREENING_UNAVAILABLE")throw error;
+  console.error("[FindIt API] Photo screening request failed",error?.name||"error");
+  fail("SCREENING_UNAVAILABLE","Photo safety screening could not check this image. Your photo was not uploaded. Please try again later or pass this challenge.");
+ }finally{clearTimeout(timer);}
+}
 async function load(code:string){
  const rows=await db("findit_games?game_code=eq."+enc(code)+"&select=game_code,host_player_id,status,challenge_count,ended_early,snapshot,version");
  if(!rows?.length) fail("GAME_NOT_FOUND","Game "+code+" could not be found.");
@@ -79,7 +98,7 @@ async function listStoredFiles(prefix:string){
  catch(error){console.warn("[FindIt API] Photo listing failed during cleanup",error);fail("PHOTO_LIST_FAILED","Could not confirm the stored photos for this game.");}
 }
 async function action(a:string,d:any){
- if(a==="health")return {version:"3.0.0",status:"ok",provider:"supabase",selfVoteRule:"half-rounded-down"};
+ if(a==="health")return {version:"3.0.0",status:"ok",provider:"supabase",selfVoteRule:"half-rounded-down",photoScreening:VISION_API_KEY?"configured":"not-configured"};
  if(a==="getLatestWinner"){
   const rows=await db("findit_winners?select=game_code,winner_name,record_type,played_at&record_type=eq.OVERALL&order=played_at.desc&limit=1");
   return rows?.length?{hasWinner:true,gameCode:rows[0].game_code,winnerName:rows[0].winner_name,photoUrl:""}:{hasWinner:false};
@@ -123,6 +142,7 @@ async function action(a:string,d:any){
   if(a==="submitPhoto"){
    const m=String(d.photoData||"").match(/^data:image\/(jpeg|jpg|png|webp);base64,([\s\S]+)$/i);if(!m)fail("PHOTO_REQUIRED","A valid photo is required.");
    const type=m[1].toLowerCase()==="jpg"?"jpeg":m[1].toLowerCase(),bytes=Uint8Array.from(atob(m[2]),x=>x.charCodeAt(0));if(bytes.length>8*1024*1024)fail("PHOTO_TOO_LARGE","Photo is too large. Please take a smaller photo.");
+   await screenPhoto(m[2]);
    ref=code+"/"+pid+"/"+c.challengeId+"-"+crypto.randomUUID()+".jpg";
    await storage("object/"+BUCKET+"/"+ref,{method:"POST",headers:{"Content-Type":"image/"+type,"x-upsert":"false"},body:bytes});
   }
