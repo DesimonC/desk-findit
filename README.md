@@ -15,8 +15,7 @@ A multiplayer photo-hunt game. The live app now uses Caroline's Supabase project
 - One vote per player per contested challenge.
 - Self-voting is limited to half of contested challenges, rounded down.
 - Zero-photo challenges require no vote; single-photo challenges are uncontested.
-- A tie for most votes in a challenge creates joint challenge winners. The player with the most challenge wins becomes the overall winner. If players tie for most challenge wins, the host starts an overall tie-break vote limited to those players’ challenge-winning photos. When one player leads, the overall winning photo is their highest-voted challenge-winning photo; if their qualifying photos tie on votes, use an overall tie-break ballot among those tied photos. If an overall tie-break vote ties, repeat using only the photos tied in the previous round. The host reveals the overall winner separately after the tie-break resolves.
-- The overall winning photo is the highest-voted challenge-winning photo belonging to the overall winning player.
+- Ties create joint challenge and overall winners.
 - When the host closes a finished game, all game photos and active game data are deleted, including winner records. Results stay visible until the host closes the game.
 - New players join with the game code or host invitation while the lobby is waiting. Each player receives a private rejoin link with an unguessable token; keep it private. Reopening it restores that player even after the game starts.
 - During voting, any player can privately report a photo for a possible Photo Safety Agreement breach. The host reviews reports in the voting screen and can remove the photo, dismiss the report, warn the player, or block them from the current game before revealing results.
