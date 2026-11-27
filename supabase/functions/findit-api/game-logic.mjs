@@ -19,7 +19,7 @@ export function playerCompletedAllChallenges(state, playerId) {
 }
 
 export function everyoneCompletedAllChallenges(state) {
-  const players = state?.players || [];
+  const players = (state?.players || []).filter(player => !player.blocked);
   return players.length > 0 && players.every(player => playerCompletedAllChallenges(state, player.playerId));
 }
 
@@ -28,9 +28,9 @@ export function canSkipVoting(state) {
 }
 
 export function everyPlayerVoted(state) {
-  const players = state?.players || [];
+  const players = (state?.players || []).filter(player => !player.blocked);
   const ids = voteableChallengeIds(state);
-  return ids.length > 0 && players.length > 0 && players.every(player =>
+  return players.length > 0 && players.every(player =>
     ids.every(challengeId => (state?.votes || []).some(vote => vote.voterPlayerId === player.playerId && vote.challengeId === challengeId))
   );
 }

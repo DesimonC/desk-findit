@@ -25,7 +25,7 @@ test("all-pass game can skip voting and finish", () => {
   assert.equal(logic.everyoneCompletedAllChallenges(game), true);
   assert.deepEqual(logic.voteableChallengeIds(game), []);
   assert.equal(logic.canSkipVoting(game), true);
-  assert.equal(logic.everyPlayerVoted(game), false);
+  assert.equal(logic.everyPlayerVoted(game), true);
 });
 
 test("single-entry challenges finish without a vote", () => {

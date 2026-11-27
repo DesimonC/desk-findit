@@ -1,6 +1,7 @@
-/* Find It! invitation links: code-only links; players enter the name they used in the game. */
+/* Find It! links use URL fragments so personal rejoin tokens are not sent in HTTP requests. */
 (function () {
   const CODE_PATTERN = /^[A-Z2-9]{4}$/;
+  const TOKEN_PATTERN = /^[A-F0-9]{48,64}$/i;
 
   function normalizeCode(value) {
     const code = String(value || "").trim().toUpperCase();
@@ -8,19 +9,25 @@
   }
 
   function readJoinCode(href) {
-    try { return normalizeCode(new URL(href).searchParams.get("join")); }
+    try { const url=new URL(href);return normalizeCode(url.searchParams.get("join")||new URLSearchParams(url.hash.slice(1)).get("join")); }
     catch (_) { return ""; }
   }
 
-  function buildJoinUrl(href, code) {
+  function readRejoinToken(href) {
+    try { const url=new URL(href),token=url.searchParams.get("rejoin")||new URLSearchParams(url.hash.slice(1)).get("rejoin");return TOKEN_PATTERN.test(String(token||""))?String(token):""; }
+    catch (_) { return ""; }
+  }
+
+  function buildJoinUrl(href, code, rejoinToken) {
     const normalized = normalizeCode(code);
     if (!normalized) throw new Error("A valid game code is required to make an invitation link.");
+    const params=new URLSearchParams({join:normalized});
+    if(rejoinToken){if(!TOKEN_PATTERN.test(String(rejoinToken)))throw new Error("The player rejoin token is invalid.");params.set("rejoin",String(rejoinToken));}
     const url = new URL(href);
     url.search = "";
-    url.hash = "";
-    url.searchParams.set("join", normalized);
+    url.hash = params.toString();
     return url.href;
   }
 
-  window.FindItInvitations = Object.freeze({ normalizeCode, readJoinCode, buildJoinUrl });
+  window.FindItInvitations = Object.freeze({ normalizeCode, readJoinCode, readRejoinToken, buildJoinUrl });
 })();

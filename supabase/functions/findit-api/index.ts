@@ -4,7 +4,7 @@ import { canSkipVoting, collectNestedStoragePaths, everyPlayerVoted, everyoneCom
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const BUCKET = "findit-game-photos";
-const cors = {"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"authorization, apikey, content-type, x-client-info","Access-Control-Allow-Methods":"GET, POST, OPTIONS","Content-Type":"application/json"};
+const cors = {"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"authorization, apikey, content-type, x-client-info, x-findit-rejoin-token","Access-Control-Allow-Methods":"GET, POST, OPTIONS","Content-Type":"application/json"};
 const enc = (s:string)=>encodeURIComponent(s);
 function out(data:unknown,status=200){return new Response(JSON.stringify(data),{status,headers:cors});}
 function fail(code:string,message:string):never{throw Object.assign(new Error(message),{code});}
@@ -18,7 +18,10 @@ async function storage(path:string,init:RequestInit={}) {
  const t=await r.text();if(!r.ok)throw new Error("Photo storage failed ("+r.status+"): "+t.slice(0,200));return t?JSON.parse(t):null;
 }
 function newId(p:string){return p+crypto.randomUUID().replaceAll("-","").slice(0,12).toUpperCase();}
+function newRejoinToken(){return Array.from(crypto.getRandomValues(new Uint8Array(24)),x=>x.toString(16).padStart(2,"0")).join("").toUpperCase();}
+async function hashRejoinToken(token:string){const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(token));return Array.from(new Uint8Array(digest),x=>x.toString(16).padStart(2,"0")).join("").toUpperCase();}
 function norm(v:unknown){return String(v||"").trim().toUpperCase();}
+function activePlayers(s:any){return s.players.filter((p:any)=>!p.blocked);}
 async function load(code:string){
  const rows=await db("findit_games?game_code=eq."+enc(code)+"&select=game_code,host_player_id,status,challenge_count,ended_early,snapshot,version");
  if(!rows?.length) fail("GAME_NOT_FOUND","Game "+code+" could not be found.");
@@ -35,13 +38,15 @@ async function save(code:string,g:any,state:any){
  }
  fail("GAME_BUSY","Another game action is saving. Please retry.");
 }
-function player(g:any,s:any,id:string){if(!s.players.some((p:any)=>p.playerId===id))fail("SESSION_INVALID","This player session is no longer valid.");}
-function gamePublic(g:any){return {gameCode:g.game_code,hostPlayerId:g.host_player_id,status:g.status,challengeCount:g.challenge_count,endedEarly:g.ended_early};}
+async function player(g:any,s:any,id:string,token:string){const p=s.players.find((x:any)=>x.playerId===id&&!x.blocked);if(!p)fail("SESSION_INVALID","This player session is no longer valid.");if(p.rejoinTokenHash&&(await hashRejoinToken(token))!==p.rejoinTokenHash)fail("SESSION_INVALID","This player session is no longer valid.");if(p.rejoinToken&&p.rejoinToken!==token)fail("SESSION_INVALID","This player session is no longer valid.");return p;}
+function gamePublic(g:any){return {gameCode:g.game_code,status:g.status,challengeCount:g.challenge_count,endedEarly:g.ended_early};}
 function playerPublic(p:any){return {playerId:p.playerId,gameCode:p.gameCode,name:p.name,isHost:p.isHost};}
+function playerListPublic(p:any){return {name:p.name,isHost:p.isHost};}
+function playerPrivate(p:any,token:string){return {...playerPublic(p),rejoinToken:token};}
 function complete(s:any,id:string){return playerCompletedAllChallenges(s,id);}
 function everyone(s:any){return everyoneCompletedAllChallenges(s);}
 function voteable(s:any){return voteableChallengeIds(s);}
-function votingComplete(s:any,id:string){const ids=voteable(s);return ids.length>0&&ids.every((c:any)=>s.votes.some((v:any)=>v.voterPlayerId===id&&v.challengeId===c));}
+function votingComplete(s:any,id:string){const ids=voteable(s);return ids.every((c:any)=>s.votes.some((v:any)=>v.voterPlayerId===id&&v.challengeId===c));}
 function allVoted(s:any){return everyPlayerVoted(s);}
 async function photoUrl(ref:string){if(!ref)return "";const r=await storage("object/sign/"+BUCKET+"/"+ref,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({expiresIn:3600})});return SUPABASE_URL+"/storage/v1"+r.signedURL;}
 async function getResults(code:string,s:any,withPhotos=true){
@@ -56,7 +61,7 @@ async function getResults(code:string,s:any,withPhotos=true){
   const winners=[];for(const e of ws){wins[e.playerId]=(wins[e.playerId]||0)+1;winners.push({playerId:e.playerId,name:names[e.playerId]||"Player",photoReference:e.photoReference,photoUrl:withPhotos?await photoUrl(e.photoReference):""});}
   results.push({challengeId:c.challengeId,challengeNumber:c.challengeNumber,name:c.name,topVotes:photos.length===1?0:top,uncontested:photos.length===1,winners});
  }
- const max=Math.max(0,...Object.values(wins) as number[]),overall=s.players.filter((p:any)=>wins[p.playerId]===max&&max>0).map((p:any)=>({playerId:p.playerId,name:p.name,challengeWins:wins[p.playerId]}));
+ const max=Math.max(0,...Object.values(wins) as number[]),overall=activePlayers(s).filter((p:any)=>wins[p.playerId]===max&&max>0).map((p:any)=>({playerId:p.playerId,name:p.name,challengeWins:wins[p.playerId]}));
  return {gameCode:code,hasWinner:overall.length>0,challengeResults:results,overallWinners:overall,maxChallengeWins:max};
 }
 async function finishAndRecord(code:string,g:any,s:any){
@@ -87,26 +92,29 @@ async function action(a:string,d:any){
   const catalog=await db("findit_challenges?active=eq.true&select=challenge_id,name,description");
   if(catalog.length<n)fail("NOT_ENOUGH_CHALLENGES","There are not enough active challenges for this game.");
   let gc="",inserted=null;
-  for(let i=0;i<30&&!inserted;i++){gc=Array.from(crypto.getRandomValues(new Uint8Array(4)),x=>"ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[x%32]).join("");const pid=newId("P");const shuffled=[...catalog].sort(()=>Math.random()-.5).slice(0,n).map((c:any,i:number)=>({...c,challengeId:c.challenge_id,challengeNumber:i+1}));const state={players:[{playerId:pid,gameCode:gc,name,isHost:true}],challenges:shuffled,entries:[],votes:[],reports:[]};try{await db("findit_games",{method:"POST",body:JSON.stringify({game_code:gc,host_player_id:pid,status:"WAITING",challenge_count:n,snapshot:state})});inserted={state,pid};}catch(e){if(!String(e).includes("23505"))throw e;}}
+  for(let i=0;i<30&&!inserted;i++){gc=Array.from(crypto.getRandomValues(new Uint8Array(4)),x=>"ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[x%32]).join("");const pid=newId("P"),token=newRejoinToken(),tokenHash=await hashRejoinToken(token);const shuffled=[...catalog].sort(()=>Math.random()-.5).slice(0,n).map((c:any,i:number)=>({...c,challengeId:c.challenge_id,challengeNumber:i+1}));const state={players:[{playerId:pid,gameCode:gc,name,isHost:true,rejoinTokenHash:tokenHash}],challenges:shuffled,entries:[],votes:[],reports:[]};try{await db("findit_games",{method:"POST",body:JSON.stringify({game_code:gc,host_player_id:pid,status:"WAITING",challenge_count:n,snapshot:state})});inserted={state,pid,token};}catch(e){if(!String(e).includes("23505"))throw e;}}
   if(!inserted)fail("CODE_GENERATION_FAILED","Could not generate a unique game code.");
-  return {game:{gameCode:gc,hostPlayerId:inserted.pid,status:"WAITING",challengeCount:n,endedEarly:false},player:{playerId:inserted.pid,gameCode:gc,name,isHost:true}};
+  return {game:{gameCode:gc,status:"WAITING",challengeCount:n,endedEarly:false},player:playerPrivate(inserted.state.players[0],inserted.token)};
  }
  const {row:g,state:s}=await load(code);
  if(a==="joinGame"){
+  const token=String(d.rejoinToken||"");
+  if(token){const tokenHash=await hashRejoinToken(token),returning=s.players.find((p:any)=>p.rejoinTokenHash===tokenHash||p.rejoinToken===token);if(!returning)fail("REJOIN_LINK_INVALID","This personal rejoin link is not valid for this game.");if(returning.blocked)return {blocked:true,notice:returning.notice?.text||"You have been blocked from this game by the host."};return {game:gamePublic(g),player:playerPrivate(returning,token),reused:true,notice:returning.notice||null};}
   const name=String(d.playerName||"").trim();if(!name)fail("PLAYER_NAME_REQUIRED","Your name is required.");if(name.length>30)fail("PLAYER_NAME_TOO_LONG","Your name must be 30 characters or fewer.");
-  const duplicate=findPlayerByName(s.players,name);if(duplicate)return {game:gamePublic(g),player:playerPublic(duplicate),reused:true};
-  if(g.status!=="WAITING")fail("GAME_ALREADY_STARTED","This game has already started. Use the same name you used before to rejoin.");
-  const p={playerId:newId("P"),gameCode:code,name,isHost:false};s.players.push(p);await save(code,g,s);return {game:gamePublic(g),player:playerPublic(p),reused:false};
+  const duplicate=findPlayerByName(s.players,name);if(duplicate){if(duplicate.blocked)fail("PLAYER_BLOCKED","You have been blocked from this game by the host.");fail("REJOIN_LINK_REQUIRED","That name is already in this game. Use your personal rejoin link to return.");}
+  if(g.status!=="WAITING")fail("GAME_ALREADY_STARTED","This game has already started. New players cannot join now; returning players need their personal rejoin link.");
+  const token=newRejoinToken(),p={playerId:newId("P"),gameCode:code,name,isHost:false,rejoinTokenHash:await hashRejoinToken(token)};s.players.push(p);await save(code,g,s);return {game:gamePublic(g),player:playerPrivate(p,token),reused:false};
  }
- const pid=String(d.playerId||"");player(g,s,pid);const me=s.players.find((p:any)=>p.playerId===pid);
- if(a==="getGameState")return {game:gamePublic(g),player:playerPublic(me),players:s.players.map(playerPublic)};
+ const pid=String(d.playerId||""),candidate=s.players.find((p:any)=>p.playerId===pid);if(a==="getGameState"&&candidate?.blocked){const supplied=String(d.rejoinToken||"");if(candidate.rejoinTokenHash&&(await hashRejoinToken(supplied))!==candidate.rejoinTokenHash)fail("SESSION_INVALID","This player session is no longer valid.");if(candidate.rejoinToken&&candidate.rejoinToken!==supplied)fail("SESSION_INVALID","This player session is no longer valid.");return {blocked:true,notice:candidate.notice?.text||"You have been blocked from this game by the host."};}const me=await player(g,s,pid,String(d.rejoinToken||""));
+ if(a==="getGameState")return {game:gamePublic(g),player:{...playerPublic(me),notice:me.notice||null},players:activePlayers(s).map(playerListPublic)};
+ if(a==="acknowledgePlayerNotice") {if(me.notice&&String(d.noticeId||"")===me.notice.id){me.notice=null;await save(code,g,s);}return {acknowledged:true};}
  if(a==="startGame"){if(pid!==g.host_player_id)fail("HOST_ONLY","Only the host can start the game.");if(g.status!=="WAITING")fail("INVALID_GAME_STATE","The game cannot be started now.");g.status="PLAYING";await save(code,g,s);return {status:g.status};}
  if(a==="getChallenges"){
   if(g.status!=="PLAYING")fail("INVALID_GAME_STATE","Challenges are only available while the game is playing.");
   const challenges=s.challenges.map((c:any)=>({...c,status:s.entries.find((e:any)=>e.playerId===pid&&e.challengeId===c.challengeId)?.status||"OPEN"}));
   return {challenges,completedCount:challenges.filter((c:any)=>c.status!=="OPEN").length,challengeCount:challenges.length,everyoneComplete:everyone(s)};
  }
- if(a==="getCompletionStatus")return {everyoneComplete:everyone(s),players:s.players.map((p:any)=>({playerId:p.playerId,name:p.name,isHost:p.isHost,completedCount:s.entries.filter((e:any)=>e.playerId===p.playerId).length,challengeCount:g.challenge_count,complete:complete(s,p.playerId)}))};
+ if(a==="getCompletionStatus")return {everyoneComplete:everyone(s),players:activePlayers(s).map((p:any)=>({name:p.name,isHost:p.isHost,completedCount:s.entries.filter((e:any)=>e.playerId===p.playerId).length,challengeCount:g.challenge_count,complete:complete(s,p.playerId)}))};
  if(a==="submitPhoto"||a==="passChallenge"){
   if(g.status!=="PLAYING")fail("INVALID_GAME_STATE","Challenges can only be completed while the game is playing.");
   const c=s.challenges.find((x:any)=>x.challengeId===String(d.challengeId));if(!c)fail("CHALLENGE_NOT_FOUND","This challenge is not part of the game.");
@@ -153,16 +161,27 @@ async function action(a:string,d:any){
  if(a==="getVotingProgress"){
   if(pid!==g.host_player_id)fail("HOST_ONLY","Only the host can view voting progress.");const ids=voteable(s);
   const pendingReports=[];for(const report of (s.reports||[]).filter((r:any)=>r.status==="PENDING")){const entry=s.entries.find((e:any)=>e.entryId===report.entryId);const challenge=s.challenges.find((c:any)=>c.challengeId===report.challengeId);pendingReports.push({reportId:report.reportId,entryId:report.entryId,reportedName:s.players.find((p:any)=>p.playerId===report.reportedPlayerId)?.name||"Player",challengeName:challenge?.name||"Challenge",reason:report.reason,photoUrl:entry?.photoReference?await photoUrl(entry.photoReference):""});}
-  return {voteableChallengeCount:ids.length,players:s.players.map((p:any)=>({name:p.name,isHost:p.isHost,complete:votingComplete(s,p.playerId)})),allVotingComplete:allVoted(s),pendingReports};
+  return {voteableChallengeCount:ids.length,players:activePlayers(s).map((p:any)=>({name:p.name,isHost:p.isHost,complete:votingComplete(s,p.playerId)})),allVotingComplete:allVoted(s),pendingReports};
  }
  if(a==="resolvePhotoReport"){
   if(pid!==g.host_player_id)fail("HOST_ONLY","Only the host can review photo reports.");if(g.status!=="VOTING")fail("INVALID_GAME_STATE","Photo reports can only be reviewed during voting.");
   const report=s.reports?.find((r:any)=>r.reportId===String(d.reportId||"")&&r.status==="PENDING");if(!report)fail("REPORT_NOT_FOUND","This report is no longer waiting for review.");
-  const decision=String(d.decision||"").toUpperCase();if(decision!=="REMOVE"&&decision!=="DISMISS")fail("INVALID_REPORT_DECISION","Choose whether to remove the photo or dismiss the report.");
-  report.status=decision==="REMOVE"?"REMOVED":"DISMISSED";report.reviewedAt=new Date().toISOString();report.reviewedBy=pid;
-  if(decision==="REMOVE"){const entry=s.entries.find((e:any)=>e.entryId===report.entryId);if(entry){entry.status="REMOVED";s.votes=s.votes.filter((v:any)=>v.challengeId!==report.challengeId);}}
+  const decision=String(d.decision||"").toUpperCase();if(!["REMOVE","DISMISS","WARN","BLOCK"].includes(decision))fail("INVALID_REPORT_DECISION","Choose to remove the photo, dismiss the report, warn the player, or block them from this game.");
+  const target=s.players.find((p:any)=>p.playerId===report.reportedPlayerId);if((decision==="WARN"||decision==="BLOCK")&&(!target||target.isHost))fail("HOST_CANNOT_BE_SANCTIONED","The host cannot warn or block themselves through this review action.");
+  const now=new Date().toISOString(),refs:string[]=[],affectedChallenges=new Set<string>(),affectedEntries=new Set<string>();
+  const removeEntry=(entry:any)=>{if(!entry||entry.status!=="SUBMITTED")return;entry.status="REMOVED";affectedEntries.add(entry.entryId);affectedChallenges.add(entry.challengeId);if(entry.photoReference)refs.push(entry.photoReference);};
+  if(decision==="REMOVE"||decision==="WARN"){removeEntry(s.entries.find((e:any)=>e.entryId===report.entryId));}
+  if(decision==="WARN"){target.notice={id:newId("N"),text:"The host has sent a safety warning. Please follow the Photo Safety Agreement. The reported photo was removed from this game.",createdAt:now};report.status="WARNED";}
+  else if(decision==="BLOCK"){
+   target.blocked=true;target.blockedAt=now;target.notice={id:newId("N"),text:"You have been blocked from this game by the host. Your photos were removed and you cannot rejoin this match.",createdAt:now};
+   for(const entry of s.entries.filter((e:any)=>e.playerId===target.playerId))removeEntry(entry);
+   for(const pending of (s.reports||[]).filter((r:any)=>r.reportedPlayerId===target.playerId&&r.status==="PENDING")){pending.status="BLOCKED";pending.reviewedAt=now;pending.reviewedBy=pid;}
+  }else{report.status=decision==="REMOVE"?"REMOVED":"DISMISSED";}
+  if(decision!=="BLOCK"){report.reviewedAt=now;report.reviewedBy=pid;}
+  if(affectedChallenges.size)s.votes=s.votes.filter((v:any)=>!affectedChallenges.has(v.challengeId)&&!affectedEntries.has(v.entryId));
+  if(decision==="BLOCK")s.votes=s.votes.filter((v:any)=>v.voterPlayerId!==target.playerId);
   await save(code,g,s);
-  if(decision==="REMOVE"){const entry=s.entries.find((e:any)=>e.entryId===report.entryId);if(entry?.photoReference){try{await storage("object/"+BUCKET,{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({prefixes:[entry.photoReference]})});}catch(error){console.warn("[FindIt API] Removed photo remains stored until game cleanup",error);}}}
+  for(let i=0;i<refs.length;i+=100){try{await storage("object/"+BUCKET,{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({prefixes:refs.slice(i,i+100)})});}catch(error){console.warn("[FindIt API] Removed photo remains stored until game cleanup",error);}}
   return {resolved:true,decision};
  }
  if(a==="finishGame"){
@@ -193,6 +212,7 @@ Deno.serve(async (req:Request)=>{
   const url=new URL(req.url);let a=url.searchParams.get("action")||"",d:any={};
   if(req.method==="GET")url.searchParams.forEach((v,k)=>{if(k!=="action")d[k]=v;});
   else{d=await req.json();a=a||d.action;}
+  const sessionToken=req.headers.get("x-findit-rejoin-token");if(sessionToken&&!d.rejoinToken)d.rejoinToken=sessionToken;
   if(!a)fail("ACTION_REQUIRED","API action is required.");
   return out({ok:true,data:await action(a,d)});
  }catch(e:any){return out({ok:false,error:{code:e.code||"SERVER_ERROR",message:e.message||String(e)}},400);}

@@ -17,8 +17,9 @@ A multiplayer photo-hunt game. The live app now uses Caroline's Supabase project
 - Zero-photo challenges require no vote; single-photo challenges are uncontested.
 - Ties create joint challenge and overall winners.
 - When the host closes a finished game, all game photos and active game data are deleted, including winner records. Results stay visible until the host closes the game.
-- Players can rejoin by opening a game invitation link or entering the 4-character code and the same name they used before. A saved browser session is restored automatically when possible.
-- During voting, any player can privately report a photo for a possible Photo Safety Agreement breach. The host reviews reports in the voting screen and can remove the photo or dismiss the report before revealing results.
+- New players join with the game code or host invitation while the lobby is waiting. Each player receives a private rejoin link with an unguessable token; keep it private. Reopening it restores that player even after the game starts.
+- During voting, any player can privately report a photo for a possible Photo Safety Agreement breach. The host reviews reports in the voting screen and can remove the photo, dismiss the report, warn the player, or block them from the current game before revealing results.
+- Warnings appear in the player's active game or on their next private-link visit. A blocked player cannot rejoin the match; their private link displays the block notice. Blocking removes their photos and votes from the active game.
 
 ## Supabase
 
