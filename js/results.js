@@ -1,12 +1,12 @@
 /* Find It! V2 - final results + latest winner splash */
 (function(){
- let loaded=false;
+ let loadedStatus="";
  async function load(){
   const s=FindItApp.state.session;
-  if(!s||loaded)return;
+  const status=FindItApp.state.game?.status;if(!s||!["CHALLENGE_RESULTS","FINISHED"].includes(status)||loadedStatus===status)return;
   try{
    const data=await FindItAPI.get("getResults",{gameCode:s.gameCode,playerId:s.playerId,_t:Date.now()});
-   loaded=true;
+   loadedStatus=status;
    render(data);
   }catch(error){FindItApp.showMessage("resultsMessage",error.message,true);}
  }
@@ -16,16 +16,20 @@
   if(endButton)endButton.textContent=isHost?"Close Game & Delete Data":"Leave Game";
   FindItApp.showMessage("resultsMessage",isHost?"Closing the game deletes its stored photos and removes its active game data. Other players will return home when you close it.":"The host will close the game and delete its stored photos when everyone has seen the results.",false);
   let html;
-  if(!data.hasWinner||!data.overallWinners.length){
-   html='<div class="winner-hero"><p class="eyebrow">GAME COMPLETE</p><h3>No Winner</h3><p>No photos were submitted, so this game has no winner.</p></div>';
+  if(!data.overallRevealed){
+   html='<div class="winner-hero"><p class="eyebrow">CHALLENGE RESULTS</p><h3>Category winners revealed</h3><p>The host will reveal the overall winner separately. If challenge wins are tied, players vote among the tied players’ challenge-winning photos. A tied ballot repeats with only the photos tied in that round.</p></div>';
+  }else if(data.overallWinner){
+   html='<div class="winner-hero"><p class="eyebrow">OVERALL WINNER</p><h3>'+escapeHtml(data.overallWinner.name)+'</h3><p>'+data.maxChallengeWins+' challenge win'+(data.maxChallengeWins===1?'':'s')+'</p><figure class="overall-winning-photo"><img src="'+data.overallWinner.photoUrl+'" alt="Overall winning photo"><figcaption>Overall winning photo</figcaption></figure></div>';
   }else{
-   const tied=data.overallWinners.length>1;
-   html='<div class="winner-hero"><p class="eyebrow">'+(tied?'JOINT WINNERS':'OVERALL WINNER')+'</p><h3>'+data.overallWinners.map(w=>escapeHtml(w.name)).join(' & ')+'</h3><p>'+data.maxChallengeWins+' challenge win'+(data.maxChallengeWins===1?'':'s')+'</p></div>';
+   html='<div class="winner-hero"><p class="eyebrow">GAME COMPLETE</p><h3>No Winner</h3><p>No challenge-winning photo was available for an overall winner.</p></div>';
   }
   if(data.challengeResults&&data.challengeResults.length){
    html+='<div class="result-list"><h3>Challenge winners</h3>'+data.challengeResults.map(c=>'<div class="result-card"><span class="challenge-number">Challenge '+c.challengeNumber+'</span><h4>'+escapeHtml(c.name)+'</h4>'+(c.winners.length?'<div class="winner-photos">'+c.winners.map(w=>'<figure><img src="'+w.photoUrl+'" alt="Winning photo"><figcaption>'+escapeHtml(w.name)+(c.uncontested?' · uncontested':c.winners.length>1?' · joint winner':'')+'</figcaption></figure>').join('')+'</div>':'<p class="hint">No photo submitted.</p>')+'</div>').join('')+'</div>';
   }
   box.innerHTML=html;
+  const reveal=document.getElementById("revealOverallWinnerButton");if(reveal){reveal.hidden=!isHost||data.overallRevealed;reveal.disabled=false;}
+  if(endButton)endButton.hidden=!data.overallRevealed;
+  FindItApp.showMessage("resultsMessage",data.overallRevealed?(isHost?"Closing the game deletes all stored photos and active game data, including the overall winning photo.":"The host can close the game and delete all stored photos and game data."):(isHost?"Review the category winners, then reveal the overall winner when ready.":"The host will reveal the overall winner after the category results."),false);
  }
  async function endGame(){
   const b=document.getElementById("endGameButton");
@@ -42,7 +46,7 @@
    FindItApp.state.session=null;
    FindItApp.state.game=null;
    FindItApp.state.localActivity=null;
-   loaded=false;
+   loadedStatus="";
    FindItApp.navigate("splashScreen");
    FindItApp.showMessage("resultsMessage","",false);
   }catch(error){
@@ -51,9 +55,14 @@
   }
  }
  function escapeHtml(v){return String(v||"").replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
+ async function revealOverall(){
+  const b=document.getElementById("revealOverallWinnerButton");if(b)b.disabled=true;
+  try{const s=FindItApp.state.session;await FindItAPI.post("revealOverallWinner",{gameCode:s.gameCode,playerId:s.playerId});await FindItApp.pollNow();if(FindItApp.state.game?.status==="CHALLENGE_RESULTS"){loadedStatus="";await load();}}
+  catch(error){FindItApp.showMessage("resultsMessage",error.message||"Could not reveal the overall winner.",true);if(b)b.disabled=false;}
+ }
  document.addEventListener("DOMContentLoaded",()=>{
-  const b=document.getElementById("endGameButton");
-  if(b)b.addEventListener("click",endGame);
+  const b=document.getElementById("endGameButton");if(b)b.addEventListener("click",endGame);
+  const reveal=document.getElementById("revealOverallWinnerButton");if(reveal)reveal.addEventListener("click",revealOverall);
  });
  window.FindItResults={load};
 })();

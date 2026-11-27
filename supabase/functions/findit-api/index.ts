@@ -69,7 +69,8 @@ function votingComplete(s:any,id:string){const ids=voteable(s);return ids.every(
 function allVoted(s:any){return everyPlayerVoted(s);}
 async function photoUrl(ref:string){if(!ref)return "";const r=await storage("object/sign/"+BUCKET+"/"+ref,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({expiresIn:3600})});return SUPABASE_URL+"/storage/v1"+r.signedURL;}
 async function getResults(code:string,s:any,withPhotos=true){
- const names=Object.fromEntries(s.players.map((p:any)=>[p.playerId,p.name])),wins:any={};s.players.forEach((p:any)=>wins[p.playerId]=0);
+ const names=Object.fromEntries(s.players.map((p:any)=>[p.playerId,p.name])),challengeWins:any={};
+ activePlayers(s).forEach((p:any)=>challengeWins[p.playerId]=0);
  const results=[];
  for(const c of s.challenges){
   const photos=s.entries.filter((e:any)=>e.challengeId===c.challengeId&&e.status==="SUBMITTED");
@@ -77,21 +78,57 @@ async function getResults(code:string,s:any,withPhotos=true){
   const counts:any={};photos.forEach((e:any)=>counts[e.entryId]=0);
   s.votes.filter((v:any)=>v.challengeId===c.challengeId).forEach((v:any)=>{if(counts[v.entryId]!==undefined)counts[v.entryId]++;});
   const top=Math.max(...Object.values(counts) as number[]),ws=photos.length===1?photos:photos.filter((e:any)=>counts[e.entryId]===top);
-  const winners=[];for(const e of ws){wins[e.playerId]=(wins[e.playerId]||0)+1;winners.push({playerId:e.playerId,name:names[e.playerId]||"Player",photoReference:e.photoReference,photoUrl:withPhotos?await photoUrl(e.photoReference):""});}
+  const winners=[];for(const e of ws){challengeWins[e.playerId]=(challengeWins[e.playerId]||0)+1;winners.push({entryId:e.entryId,playerId:e.playerId,name:names[e.playerId]||"Player",photoReference:e.photoReference,totalVotes:counts[e.entryId]||0,photoUrl:withPhotos?await photoUrl(e.photoReference):""});}
   results.push({challengeId:c.challengeId,challengeNumber:c.challengeNumber,name:c.name,topVotes:photos.length===1?0:top,uncontested:photos.length===1,winners});
  }
- const max=Math.max(0,...Object.values(wins) as number[]),overall=activePlayers(s).filter((p:any)=>wins[p.playerId]===max&&max>0).map((p:any)=>({playerId:p.playerId,name:p.name,challengeWins:wins[p.playerId]}));
- return {gameCode:code,hasWinner:overall.length>0,challengeResults:results,overallWinners:overall,maxChallengeWins:max};
+ const max=Math.max(0,...Object.values(challengeWins) as number[]),leaderIds=activePlayers(s).filter((p:any)=>challengeWins[p.playerId]===max&&max>0).map((p:any)=>p.playerId);
+ const chosen=s.overallWinnerEntryId?s.entries.find((e:any)=>e.entryId===s.overallWinnerEntryId&&e.status==="SUBMITTED"):null;
+ const overallWinner=chosen?{entryId:chosen.entryId,playerId:chosen.playerId,name:names[chosen.playerId]||"Player",photoReference:chosen.photoReference,photoUrl:withPhotos?await photoUrl(chosen.photoReference):""}:null;
+ return {gameCode:code,hasWinner:leaderIds.length>0,challengeResults:results,overallWinners:overallWinner?[{playerId:overallWinner.playerId,name:overallWinner.name,challengeWins:challengeWins[overallWinner.playerId]||0}]:[],overallWinner,overallRevealed:s.overallRevealed===true,challengeWins,maxChallengeWins:max,leaderIds};
 }
 async function finishAndRecord(code:string,g:any,s:any){
  const result=await getResults(code,s,false),playedAt=new Date().toISOString(),rows:any[]=[];
- for(const challenge of result.challengeResults)for(const winner of challenge.winners)rows.push({game_code:code,played_at:playedAt,record_type:"CHALLENGE",challenge_number:challenge.challengeNumber,challenge_name:challenge.name,winner_player_id:winner.playerId,winner_name:winner.name,winning_photo_reference:winner.photoReference,is_joint_winner:challenge.winners.length>1,is_overall_winner:result.overallWinners.some((item:any)=>item.playerId===winner.playerId)});
- if(!result.hasWinner)rows.push({game_code:code,played_at:playedAt,record_type:"NO_WINNER",winner_name:"No winner"});
- else for(const winner of result.overallWinners)rows.push({game_code:code,played_at:playedAt,record_type:"OVERALL",winner_player_id:winner.playerId,winner_name:winner.name,challenge_wins:winner.challengeWins,is_joint_winner:result.overallWinners.length>1,is_overall_winner:true});
+ for(const challenge of result.challengeResults)for(const winner of challenge.winners)rows.push({game_code:code,played_at:playedAt,record_type:"CHALLENGE",challenge_number:challenge.challengeNumber,challenge_name:challenge.name,winner_player_id:winner.playerId,winner_name:winner.name,winning_photo_reference:winner.photoReference,is_joint_winner:challenge.winners.length>1,is_overall_winner:result.overallWinner?.entryId===winner.entryId});
+ if(result.overallWinner)rows.push({game_code:code,played_at:playedAt,record_type:"OVERALL",winner_player_id:result.overallWinner.playerId,winner_name:result.overallWinner.name,winning_photo_reference:result.overallWinner.photoReference,challenge_wins:result.challengeWins[result.overallWinner.playerId]||0,is_joint_winner:false,is_overall_winner:true});
+ else rows.push({game_code:code,played_at:playedAt,record_type:"NO_WINNER",winner_name:"No winner"});
  if(rows.length)await db("findit_winners",{method:"POST",body:JSON.stringify(rows)});
  g.status="FINISHED";
  await save(code,g,s);
- return {gameCode:code,status:"FINISHED",hasWinner:result.hasWinner,overallWinners:result.overallWinners,maxChallengeWins:result.maxChallengeWins};
+ return {gameCode:code,status:"FINISHED",hasWinner:result.hasWinner,overallWinners:result.overallWinners,overallWinner:result.overallWinner,maxChallengeWins:result.maxChallengeWins};
+}
+async function startOverallTieBreak(code:string,g:any,s:any,candidates:any[]){
+ if(!candidates.length){s.overallRevealed=true;s.overallWinnerEntryId=null;return await finishAndRecord(code,g,s);}
+ if(candidates.length===1){s.overallRevealed=true;s.overallWinnerEntryId=candidates[0].entryId;return await finishAndRecord(code,g,s);}
+ s.overallCandidates=candidates.map((e:any)=>e.entryId);s.overallVoteRound=1;s.overallVotes=[];g.status="OVERALL_VOTING";await save(code,g,s);
+ return {status:g.status,round:s.overallVoteRound,candidateCount:s.overallCandidates.length};
+}
+async function revealOverallWinner(code:string,g:any,s:any){
+ const result=await getResults(code,s,false),max=result.maxChallengeWins;
+ if(!result.hasWinner||max<1){s.overallRevealed=true;s.overallWinnerEntryId=null;return await finishAndRecord(code,g,s);}
+ const leaders=new Set(result.leaderIds),qualifying=result.challengeResults.flatMap((c:any)=>c.winners).filter((w:any)=>leaders.has(w.playerId));
+ let candidates=qualifying;
+ if(leaders.size===1){
+  const top=Math.max(...qualifying.map((w:any)=>Number(w.totalVotes)||0));
+  candidates=qualifying.filter((w:any)=>Number(w.totalVotes||0)===top);
+ }
+ return await startOverallTieBreak(code,g,s,candidates.map((w:any)=>s.entries.find((e:any)=>e.entryId===w.entryId)).filter(Boolean));
+}
+async function acceptOverallVote(code:string,g:any,s:any,pid:string,entryId:string){
+ const round=Number(s.overallVoteRound||1),candidates=(s.overallCandidates||[]).map((id:string)=>s.entries.find((e:any)=>e.entryId===id&&e.status==="SUBMITTED")).filter(Boolean);
+ const selected=candidates.find((e:any)=>e.entryId===entryId);if(!selected)fail("ENTRY_NOT_FOUND","That photo is not eligible for this tie-break vote.");
+ s.overallVotes=s.overallVotes||[];
+ if(s.overallVotes.some((v:any)=>v.round===round&&v.voterPlayerId===pid))fail("ALREADY_VOTED","You have already voted in this tie-break round.");
+ s.overallVotes.push({round,voterPlayerId:pid,entryId,photoOwnerPlayerId:selected.playerId,votedAt:new Date().toISOString()});
+ const active=activePlayers(s),complete=active.length>0&&active.every((p:any)=>s.overallVotes.some((v:any)=>v.round===round&&v.voterPlayerId===p.playerId));
+ if(complete){
+  const counts:any={};candidates.forEach((e:any)=>counts[e.entryId]=0);
+  s.overallVotes.filter((v:any)=>v.round===round).forEach((v:any)=>{if(counts[v.entryId]!==undefined)counts[v.entryId]++;});
+  const top=Math.max(...Object.values(counts) as number[]),tied=candidates.filter((e:any)=>counts[e.entryId]===top);
+  if(tied.length===1){s.overallWinnerEntryId=tied[0].entryId;s.overallRevealed=true;return await finishAndRecord(code,g,s);}
+  s.overallCandidates=tied.map((e:any)=>e.entryId);s.overallVoteRound=round+1;s.overallVotes=[];
+ }
+ await save(code,g,s);
+ return {accepted:true,overallTieBreak:true,round:s.overallVoteRound,allVotingComplete:complete};
 }
 async function listStoredFiles(prefix:string){
  try{return await collectNestedStoragePaths(async(folder:string,offset:number,limit:number)=>storage("object/list/"+BUCKET,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prefix:folder,limit,offset,sortBy:{column:"name",order:"asc"}})}),prefix,1000);}
@@ -151,10 +188,16 @@ async function action(a:string,d:any){
  }
  if(a==="startVoting"){
   if(pid!==g.host_player_id)fail("HOST_ONLY","Only the host can start voting.");if(g.status!=="PLAYING")fail("INVALID_GAME_STATE","Voting can only start after gameplay.");if(!everyone(s))fail("PLAYERS_NOT_COMPLETE","All players must complete their challenges before voting starts.");
-  const count=voteable(s).length;if(!count)return await finishAndRecord(code,g,s);
+  const count=voteable(s).length;if(!count){g.status="CHALLENGE_RESULTS";await save(code,g,s);return {status:g.status,voteableChallengeCount:0};}
   g.status="VOTING";await save(code,g,s);return {status:g.status,voteableChallengeCount:count};
  }
  if(a==="getVotingState"){
+  if(g.status==="OVERALL_VOTING"){
+   const round=Number(s.overallVoteRound||1),already=(s.overallVotes||[]).some((v:any)=>v.round===round&&v.voterPlayerId===pid),options=[];
+   const entries=(s.overallCandidates||[]).map((id:string)=>s.entries.find((e:any)=>e.entryId===id&&e.status==="SUBMITTED")).filter(Boolean);
+   for(let i=0;i<entries.length;i++){const e=entries[i];options.push({optionId:e.entryId,label:"Photo "+(i+1),photoUrl:await photoUrl(e.photoReference),reported:false,reportedByMe:false});}
+   return {complete:already,overallTieBreak:true,round,challenge:{challengeId:"OVERALL",challengeNumber:0,name:"Overall winner tie-break · Round "+round},options};
+  }
   if(g.status!=="VOTING")fail("INVALID_GAME_STATE","Voting is not active.");const ids=voteable(s),next=s.challenges.find((c:any)=>ids.includes(c.challengeId)&&!s.votes.some((v:any)=>v.voterPlayerId===pid&&v.challengeId===c.challengeId));
   const selfVotesUsed=s.votes.filter((v:any)=>v.voterPlayerId===pid&&v.isSelfVote).length,selfVoteLimit=Math.floor(ids.length/2);
   if(!next)return {complete:true,selfVoteUsed:selfVotesUsed>0,selfVotesUsed,selfVoteLimit,allVotingComplete:allVoted(s),voteableChallengeCount:ids.length};
@@ -171,7 +214,9 @@ async function action(a:string,d:any){
   await save(code,g,s);return {reported:true,reused:false};
  }
  if(a==="castVote"){
-  if(g.status!=="VOTING")fail("INVALID_GAME_STATE","Voting is not active.");const challengeId=String(d.challengeId||""),entryId=String(d.entryId||"");
+  const challengeId=String(d.challengeId||""),entryId=String(d.entryId||"");
+  if(g.status==="OVERALL_VOTING"&&challengeId==="OVERALL")return await acceptOverallVote(code,g,s,pid,entryId);
+  if(g.status!=="VOTING")fail("INVALID_GAME_STATE","Voting is not active.");
   if(!voteable(s).includes(challengeId))fail("VOTE_NOT_REQUIRED","This challenge is not contested.");
   if(s.votes.some((v:any)=>v.voterPlayerId===pid&&v.challengeId===challengeId))fail("ALREADY_VOTED","You have already voted for this challenge.");
   const e=s.entries.find((x:any)=>x.entryId===entryId&&x.challengeId===challengeId&&x.status==="SUBMITTED");if(!e)fail("ENTRY_NOT_FOUND","That photo is not available for this vote.");
@@ -179,7 +224,9 @@ async function action(a:string,d:any){
   s.votes.push({voteId:newId("V"),gameCode:code,challengeId,voterPlayerId:pid,entryId,photoOwnerPlayerId:e.playerId,isSelfVote:self});await save(code,g,s);return {accepted:true,isSelfVote:self,votingComplete:votingComplete(s,pid),allVotingComplete:allVoted(s)};
  }
  if(a==="getVotingProgress"){
-  if(pid!==g.host_player_id)fail("HOST_ONLY","Only the host can view voting progress.");const ids=voteable(s);
+  if(pid!==g.host_player_id)fail("HOST_ONLY","Only the host can view voting progress.");
+  if(g.status==="OVERALL_VOTING"){const round=Number(s.overallVoteRound||1),players=activePlayers(s);return {overallTieBreak:true,round,players:players.map((p:any)=>({name:p.name,isHost:p.isHost,complete:(s.overallVotes||[]).some((v:any)=>v.round===round&&v.voterPlayerId===p.playerId)})),allVotingComplete:players.length>0&&players.every((p:any)=>(s.overallVotes||[]).some((v:any)=>v.round===round&&v.voterPlayerId===p.playerId)),pendingReports:[]};}
+  if(g.status!=="VOTING")fail("INVALID_GAME_STATE","Voting is not active.");const ids=voteable(s);
   const pendingReports=[];for(const report of (s.reports||[]).filter((r:any)=>r.status==="PENDING")){const entry=s.entries.find((e:any)=>e.entryId===report.entryId);const challenge=s.challenges.find((c:any)=>c.challengeId===report.challengeId);pendingReports.push({reportId:report.reportId,entryId:report.entryId,reportedName:s.players.find((p:any)=>p.playerId===report.reportedPlayerId)?.name||"Player",challengeName:challenge?.name||"Challenge",reason:report.reason,photoUrl:entry?.photoReference?await photoUrl(entry.photoReference):""});}
   return {voteableChallengeCount:ids.length,players:activePlayers(s).map((p:any)=>({name:p.name,isHost:p.isHost,complete:votingComplete(s,p.playerId)})),allVotingComplete:allVoted(s),pendingReports};
  }
@@ -207,12 +254,17 @@ async function action(a:string,d:any){
  if(a==="finishGame"){
   if(pid!==g.host_player_id)fail("HOST_ONLY","Only the host can finish the game.");
   if((s.reports||[]).some((r:any)=>r.status==="PENDING"))fail("REPORTS_PENDING","The host must review all reported photos before revealing results.");
-  if(g.status==="PLAYING"&&canSkipVoting(s))return await finishAndRecord(code,g,s);
+  if(g.status==="PLAYING"&&canSkipVoting(s)){g.status="CHALLENGE_RESULTS";await save(code,g,s);return {status:g.status};}
   if(g.status!=="VOTING")fail("INVALID_GAME_STATE","The game can only finish after voting.");if(!allVoted(s))fail("VOTING_NOT_COMPLETE","All players must finish voting first.");
-  return await finishAndRecord(code,g,s);
+  g.status="CHALLENGE_RESULTS";await save(code,g,s);return {status:g.status};
+ }
+ if(a==="revealOverallWinner"){
+  if(pid!==g.host_player_id)fail("HOST_ONLY","Only the host can reveal the overall winner.");
+  if(g.status!=="CHALLENGE_RESULTS")fail("INVALID_GAME_STATE","Reveal the overall winner after the challenge results.");
+  return await revealOverallWinner(code,g,s);
  }
  if(a==="getResults"){
-  if(g.status!=="FINISHED")fail("RESULTS_NOT_READY","Results are not ready yet.");return await getResults(code,s,true);
+  if(g.status!=="CHALLENGE_RESULTS"&&g.status!=="OVERALL_VOTING"&&g.status!=="FINISHED")fail("RESULTS_NOT_READY","Challenge results are not ready yet.");return await getResults(code,s,true);
  }
  if(a==="cleanupFinishedGame"){
   if(pid!==g.host_player_id)fail("HOST_ONLY","Only the host can close the finished game.");if(g.status!=="FINISHED")fail("INVALID_GAME_STATE","Only a finished game can be cleaned up.");
