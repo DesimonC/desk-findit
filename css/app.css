@@ -98,3 +98,4 @@
 .site-footer p {
   margin: .5rem 0 0;
 }
+.vote-option{display:flex;flex-direction:column;gap:8px;min-width:0}.report-photo-button{margin:0;padding:10px 12px;font-size:.85rem}.reported-note{margin:0;color:#ffbd3f;font-size:.82rem;font-weight:800;text-align:center}.photo-reports{margin-top:20px;padding-top:12px;border-top:1px solid rgba(255,255,255,.12)}.photo-report{margin:12px 0;padding:14px;border:1px solid rgba(255,189,63,.35);border-radius:16px;background:rgba(255,189,63,.06)}.photo-report img{display:block;width:100%;max-height:300px;object-fit:contain;border-radius:12px;background:#000}.photo-report .button{margin-top:8px}
