@@ -16,7 +16,8 @@ A multiplayer photo-hunt game. The live app now uses Caroline's Supabase project
 - Self-voting is limited to half of contested challenges, rounded down.
 - Zero-photo challenges require no vote; single-photo challenges are uncontested.
 - Ties create joint challenge and overall winners.
-- At End Game, all game photos are deleted, including winners' photos. Text winner records remain and photo references are cleared.
+- When the host closes a finished game, all game photos and active game data are deleted, including winner records. Results stay visible until the host closes the game.
+- Players can rejoin by opening a game invitation link or entering the 4-character code and the same name they used before. A saved browser session is restored automatically when possible.
 
 ## Supabase
 

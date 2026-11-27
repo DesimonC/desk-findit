@@ -12,6 +12,9 @@
  }
  function render(data){
   const box=document.getElementById("finalResults");
+  const endButton=document.getElementById("endGameButton"),isHost=!!(FindItApp.state.session&&FindItApp.state.session.isHost);
+  if(endButton)endButton.textContent=isHost?"Close Game & Delete Data":"Leave Game";
+  FindItApp.showMessage("resultsMessage",isHost?"Closing the game deletes its stored photos and removes its active game data. Other players will return home when you close it.":"The host will close the game and delete its stored photos when everyone has seen the results.",false);
   let html;
   if(!data.hasWinner||!data.overallWinners.length){
    html='<div class="winner-hero"><p class="eyebrow">GAME COMPLETE</p><h3>No Winner</h3><p>No photos were submitted, so this game has no winner.</p></div>';
@@ -31,7 +34,8 @@
   try{
    if(s&&s.isHost){
     FindItApp.showMessage("resultsMessage","Closing game...",false);
-    await FindItAPI.post("cleanupFinishedGame",{gameCode:s.gameCode,playerId:s.playerId});
+    const cleanup=await FindItAPI.post("cleanupFinishedGame",{gameCode:s.gameCode,playerId:s.playerId});
+    FindItApp.showMessage("globalMessage","Game closed. "+Number(cleanup.photosRemoved||0)+" photo(s) and its game data deleted.",false);
    }
    FindItSession.clear();
    FindItApp.stopPolling();

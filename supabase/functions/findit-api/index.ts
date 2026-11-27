@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { canSkipVoting, collectNestedStoragePaths, everyPlayerVoted, everyoneCompletedAllChallenges, findPlayerByName, playerCompletedAllChallenges, voteableChallengeIds } from "./game-logic.mjs";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -37,11 +38,11 @@ async function save(code:string,g:any,state:any){
 function player(g:any,s:any,id:string){if(!s.players.some((p:any)=>p.playerId===id))fail("SESSION_INVALID","This player session is no longer valid.");}
 function gamePublic(g:any){return {gameCode:g.game_code,hostPlayerId:g.host_player_id,status:g.status,challengeCount:g.challenge_count,endedEarly:g.ended_early};}
 function playerPublic(p:any){return {playerId:p.playerId,gameCode:p.gameCode,name:p.name,isHost:p.isHost};}
-function complete(s:any,id:string){return s.entries.filter((e:any)=>e.playerId===id).length>=s.challenges.length;}
-function everyone(s:any){return s.players.length>0&&s.players.every((p:any)=>complete(s,p.playerId));}
-function voteable(s:any){return [...new Set(s.entries.filter((e:any)=>e.status==="SUBMITTED").map((e:any)=>e.challengeId))].filter((id:any)=>s.entries.filter((e:any)=>e.challengeId===id&&e.status==="SUBMITTED").length>=2);}
+function complete(s:any,id:string){return playerCompletedAllChallenges(s,id);}
+function everyone(s:any){return everyoneCompletedAllChallenges(s);}
+function voteable(s:any){return voteableChallengeIds(s);}
 function votingComplete(s:any,id:string){const ids=voteable(s);return ids.length>0&&ids.every((c:any)=>s.votes.some((v:any)=>v.voterPlayerId===id&&v.challengeId===c));}
-function allVoted(s:any){const ids=voteable(s);return ids.length>0&&s.players.every((p:any)=>votingComplete(s,p.playerId));}
+function allVoted(s:any){return everyPlayerVoted(s);}
 async function photoUrl(ref:string){if(!ref)return "";const r=await storage("object/sign/"+BUCKET+"/"+ref,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({expiresIn:3600})});return SUPABASE_URL+"/storage/v1"+r.signedURL;}
 async function getResults(code:string,s:any,withPhotos=true){
  const names=Object.fromEntries(s.players.map((p:any)=>[p.playerId,p.name])),wins:any={};s.players.forEach((p:any)=>wins[p.playerId]=0);
@@ -57,6 +58,20 @@ async function getResults(code:string,s:any,withPhotos=true){
  }
  const max=Math.max(0,...Object.values(wins) as number[]),overall=s.players.filter((p:any)=>wins[p.playerId]===max&&max>0).map((p:any)=>({playerId:p.playerId,name:p.name,challengeWins:wins[p.playerId]}));
  return {gameCode:code,hasWinner:overall.length>0,challengeResults:results,overallWinners:overall,maxChallengeWins:max};
+}
+async function finishAndRecord(code:string,g:any,s:any){
+ const result=await getResults(code,s,false),playedAt=new Date().toISOString(),rows:any[]=[];
+ for(const challenge of result.challengeResults)for(const winner of challenge.winners)rows.push({game_code:code,played_at:playedAt,record_type:"CHALLENGE",challenge_number:challenge.challengeNumber,challenge_name:challenge.name,winner_player_id:winner.playerId,winner_name:winner.name,winning_photo_reference:winner.photoReference,is_joint_winner:challenge.winners.length>1,is_overall_winner:result.overallWinners.some((item:any)=>item.playerId===winner.playerId)});
+ if(!result.hasWinner)rows.push({game_code:code,played_at:playedAt,record_type:"NO_WINNER",winner_name:"No winner"});
+ else for(const winner of result.overallWinners)rows.push({game_code:code,played_at:playedAt,record_type:"OVERALL",winner_player_id:winner.playerId,winner_name:winner.name,challenge_wins:winner.challengeWins,is_joint_winner:result.overallWinners.length>1,is_overall_winner:true});
+ if(rows.length)await db("findit_winners",{method:"POST",body:JSON.stringify(rows)});
+ g.status="FINISHED";
+ await save(code,g,s);
+ return {gameCode:code,status:"FINISHED",hasWinner:result.hasWinner,overallWinners:result.overallWinners,maxChallengeWins:result.maxChallengeWins};
+}
+async function listStoredFiles(prefix:string){
+ try{return await collectNestedStoragePaths(async(folder:string,offset:number,limit:number)=>storage("object/list/"+BUCKET,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prefix:folder,limit,offset,sortBy:{column:"name",order:"asc"}})}),prefix,1000);}
+ catch(error){console.warn("[FindIt API] Photo listing failed during cleanup",error);fail("PHOTO_LIST_FAILED","Could not confirm the stored photos for this game.");}
 }
 async function action(a:string,d:any){
  if(a==="health")return {version:"3.0.0",status:"ok",provider:"supabase",selfVoteRule:"half-rounded-down"};
@@ -78,8 +93,9 @@ async function action(a:string,d:any){
  }
  const {row:g,state:s}=await load(code);
  if(a==="joinGame"){
-  const name=String(d.playerName||"").trim();if(!name)fail("PLAYER_NAME_REQUIRED","Your name is required.");if(g.status!=="WAITING")fail("GAME_ALREADY_STARTED","This game has already started.");
-  const duplicate=s.players.find((p:any)=>p.name.toLowerCase()===name.toLowerCase());if(duplicate){if(duplicate.isHost)fail("NAME_IN_USE","That player name is already in this game.");return {game:gamePublic(g),player:playerPublic(duplicate),reused:true};}
+  const name=String(d.playerName||"").trim();if(!name)fail("PLAYER_NAME_REQUIRED","Your name is required.");if(name.length>30)fail("PLAYER_NAME_TOO_LONG","Your name must be 30 characters or fewer.");
+  const duplicate=findPlayerByName(s.players,name);if(duplicate)return {game:gamePublic(g),player:playerPublic(duplicate),reused:true};
+  if(g.status!=="WAITING")fail("GAME_ALREADY_STARTED","This game has already started. Use the same name you used before to rejoin.");
   const p={playerId:newId("P"),gameCode:code,name,isHost:false};s.players.push(p);await save(code,g,s);return {game:gamePublic(g),player:playerPublic(p),reused:false};
  }
  const pid=String(d.playerId||"");player(g,s,pid);const me=s.players.find((p:any)=>p.playerId===pid);
@@ -107,7 +123,7 @@ async function action(a:string,d:any){
  }
  if(a==="startVoting"){
   if(pid!==g.host_player_id)fail("HOST_ONLY","Only the host can start voting.");if(g.status!=="PLAYING")fail("INVALID_GAME_STATE","Voting can only start after gameplay.");if(!everyone(s))fail("PLAYERS_NOT_COMPLETE","All players must complete their challenges before voting starts.");
-  const count=voteable(s).length;if(!count)fail("NO_CONTESTED_CHALLENGES","There are no challenges with at least two submitted photos to vote on.");
+  const count=voteable(s).length;if(!count)return await finishAndRecord(code,g,s);
   g.status="VOTING";await save(code,g,s);return {status:g.status,voteableChallengeCount:count};
  }
  if(a==="getVotingState"){
@@ -131,24 +147,23 @@ async function action(a:string,d:any){
   return {voteableChallengeCount:ids.length,players:s.players.map((p:any)=>({name:p.name,isHost:p.isHost,complete:votingComplete(s,p.playerId)})),allVotingComplete:allVoted(s)};
  }
  if(a==="finishGame"){
-  if(pid!==g.host_player_id)fail("HOST_ONLY","Only the host can finish the game.");if(g.status!=="VOTING")fail("INVALID_GAME_STATE","The game can only finish after voting.");if(!allVoted(s))fail("VOTING_NOT_COMPLETE","All players must finish voting first.");
-  const r=await getResults(code,s,false),played_at=new Date().toISOString(),rows:any[]=[];
-  for(const c of r.challengeResults)for(const w of c.winners)rows.push({game_code:code,played_at,record_type:"CHALLENGE",challenge_number:c.challengeNumber,challenge_name:c.name,winner_player_id:w.playerId,winner_name:w.name,winning_photo_reference:w.photoReference,is_joint_winner:c.winners.length>1,is_overall_winner:r.overallWinners.some((x:any)=>x.playerId===w.playerId)});
-  if(!r.hasWinner)rows.push({game_code:code,played_at,record_type:"NO_WINNER",winner_name:"No winner"});
-  else for(const w of r.overallWinners)rows.push({game_code:code,played_at,record_type:"OVERALL",winner_player_id:w.playerId,winner_name:w.name,challenge_wins:w.challengeWins,is_joint_winner:r.overallWinners.length>1,is_overall_winner:true});
-  if(rows.length)await db("findit_winners",{method:"POST",body:JSON.stringify(rows)});g.status="FINISHED";await save(code,g,s);return {gameCode:code,status:"FINISHED",hasWinner:r.hasWinner,overallWinners:r.overallWinners,maxChallengeWins:r.maxChallengeWins};
+  if(pid!==g.host_player_id)fail("HOST_ONLY","Only the host can finish the game.");
+  if(g.status==="PLAYING"&&canSkipVoting(s))return await finishAndRecord(code,g,s);
+  if(g.status!=="VOTING")fail("INVALID_GAME_STATE","The game can only finish after voting.");if(!allVoted(s))fail("VOTING_NOT_COMPLETE","All players must finish voting first.");
+  return await finishAndRecord(code,g,s);
  }
  if(a==="getResults"){
   if(g.status!=="FINISHED")fail("RESULTS_NOT_READY","Results are not ready yet.");return await getResults(code,s,true);
  }
  if(a==="cleanupFinishedGame"){
   if(pid!==g.host_player_id)fail("HOST_ONLY","Only the host can close the finished game.");if(g.status!=="FINISHED")fail("INVALID_GAME_STATE","Only a finished game can be cleaned up.");
-  const listed=await storage("object/list/"+BUCKET,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prefix:code,limit:1000})});
-  const paths=(listed||[]).map((x:any)=>code+"/"+x.name);if(paths.length)await storage("object/"+BUCKET,{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({prefixes:paths})});
-  await db("findit_winners?game_code=eq."+enc(code),{method:"PATCH",body:JSON.stringify({winning_photo_reference:null})});
-  const count=(await db("findit_winners?game_code=eq."+enc(code)+"&select=id")).length;
+  const paths=await listStoredFiles(code);
+  for(let i=0;i<paths.length;i+=100)await storage("object/"+BUCKET,{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({prefixes:paths.slice(i,i+100)})});
+  const remaining=await listStoredFiles(code);if(remaining.length)fail("PHOTO_CLEANUP_INCOMPLETE","Some game photos could not be deleted. The game data has been kept so cleanup can be retried.");
+  const records=(await db("findit_winners?game_code=eq."+enc(code)+"&select=id")).length;
+  if(records)await db("findit_winners?game_code=eq."+enc(code),{method:"DELETE"});
   await db("findit_games?game_code=eq."+enc(code),{method:"DELETE"});
-  return {cleaned:true,gameCode:code,recordsRetained:count,photosRemoved:paths.length};
+  return {cleaned:true,gameCode:code,recordsRemoved:records,photosRemoved:paths.length};
  }
  fail("UNKNOWN_ACTION","Unknown API action: "+a);
 }
