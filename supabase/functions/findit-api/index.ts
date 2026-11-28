@@ -201,11 +201,13 @@ async function action(a:string,d:any){
   return {complete:false,selfVoteUsed:selfVotesUsed>0,selfVotesUsed,selfVoteLimit,voteableChallengeCount:ids.length,challenge:next,options};
  }
  if(a==="reportPhoto"){
+  const reason=String(d.reason||"").trim();
+  if(!reason||reason.length>500)fail("INVALID_REPORT_REASON","Please provide a report reason between 1 and 500 characters.");
   if(g.status!=="VOTING")fail("INVALID_GAME_STATE","Photos can only be reported during voting.");
   const challengeId=String(d.challengeId||""),entryId=String(d.entryId||""),entry=s.entries.find((e:any)=>e.entryId===entryId&&e.challengeId===challengeId&&e.status==="SUBMITTED");
   if(!entry)fail("ENTRY_NOT_FOUND","That photo is no longer available to report.");
   s.reports=s.reports||[];if(s.reports.some((r:any)=>r.entryId===entryId&&r.reporterPlayerId===pid))return {reported:true,reused:true};
-  s.reports.push({reportId:newId("R"),entryId,challengeId,reporterPlayerId:pid,reportedPlayerId:entry.playerId,reason:"Possible breach of the Photo Safety Agreement",status:"PENDING",createdAt:new Date().toISOString()});
+  s.reports.push({reportId:newId("R"),entryId,challengeId,reporterPlayerId:pid,reportedPlayerId:entry.playerId,reason,status:"PENDING",createdAt:new Date().toISOString()});
   await save(code,g,s);return {reported:true,reused:false};
  }
  if(a==="castVote"){
