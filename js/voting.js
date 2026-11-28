@@ -30,10 +30,12 @@
  }
  async function reportPhoto(entryId){
   if(!current||busy)return;
-  if(!window.confirm("Report this photo to the host for a possible breach of the Photo Safety Agreement? Reporting will not count as your vote."))return;
+  const reason=window.prompt("Why are you reporting this photo? Briefly explain the possible breach of the Photo Safety Agreement (maximum 500 characters). This is sent privately to the host and does not count as a vote.","");
+  if(reason===null)return;
+  if(!reason.trim()||reason.trim().length>500){FindItApp.showMessage("votingMessage","Please give a reason between 1 and 500 characters. Tap Report photo to try again.",true);return;}
   busy=true;
   let message="Report sent privately to the host for review.",isError=false;
-  try{const s=FindItApp.state.session;await FindItAPI.post("reportPhoto",{gameCode:s.gameCode,playerId:s.playerId,challengeId:current.challenge.challengeId,entryId});}
+  try{const s=FindItApp.state.session;await FindItAPI.post("reportPhoto",{gameCode:s.gameCode,playerId:s.playerId,challengeId:current.challenge.challengeId,entryId,reason:reason.trim()});}
   catch(error){message=error.message||"Could not send the report. Please tell the host.";isError=true;}
   finally{busy=false;await load();FindItApp.showMessage("votingMessage",message,isError);}
  }
