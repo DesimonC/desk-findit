@@ -204,8 +204,28 @@ async function action(a:string,d:any){
   const e={entryId:newId("E"),gameCode:code,playerId:pid,challengeId:c.challengeId,challengeNumber:c.challengeNumber,status:a==="passChallenge"?"PASSED":"SUBMITTED",photoReference:ref,submittedAt:new Date().toISOString()};
   s.entries.push(e);await save(code,g,s);return {entryId:e.entryId,status:e.status,completed:complete(s,pid),everyoneComplete:everyone(s)};
  }
+ if(a==="getPhotoReview"){
+  if(pid!==g.host_player_id)fail("HOST_ONLY","Only the host can review photos before voting.");
+  if(g.status!=="PLAYING"||!everyone(s))fail("REVIEW_NOT_READY","Wait until everyone has submitted or passed.");
+  const photos=[];
+  for(const entry of s.entries.filter((e:any)=>e.status==="SUBMITTED")){
+   photos.push({entryId:entry.entryId,challengeName:s.challenges.find((c:any)=>c.challengeId===entry.challengeId)?.name||"Challenge",photoUrl:await photoUrl(entry.photoReference)});
+  }
+  return {photos};
+ }
+ if(a==="rejectReviewPhoto"){
+  if(pid!==g.host_player_id)fail("HOST_ONLY","Only the host can reject photos before voting.");
+  if(g.status!=="PLAYING"||!everyone(s))fail("REVIEW_NOT_READY","Photos can only be reviewed after everyone finishes and before voting.");
+  const entry=s.entries.find((e:any)=>e.entryId===String(d.entryId)&&e.status==="SUBMITTED");
+  if(!entry)fail("ENTRY_NOT_FOUND","That photo is no longer awaiting review.");
+  entry.status="REMOVED";entry.rejectedByHost=true;
+  await save(code,g,s);
+  if(entry.photoReference)try{await storage("object/"+BUCKET,{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({prefixes:[entry.photoReference]})});}catch(error){console.error("Rejected photo is excluded; stored file will retry at game cleanup",error);}
+  return {rejected:true};
+ }
  if(a==="startVoting"){
   if(pid!==g.host_player_id)fail("HOST_ONLY","Only the host can start voting.");if(g.status!=="PLAYING")fail("INVALID_GAME_STATE","Voting can only start after gameplay.");if(!everyone(s))fail("PLAYERS_NOT_COMPLETE","All players must complete their challenges before voting starts.");
+  if(d.reviewConfirmed!==true||JSON.stringify([...(d.reviewedEntryIds||[])].sort())!==JSON.stringify(s.entries.filter((e:any)=>e.status==="SUBMITTED").map((e:any)=>e.entryId).sort()))fail("REVIEW_REQUIRED","Review every remaining photo before starting voting.");
   const count=voteable(s).length;if(!count){g.status="CHALLENGE_RESULTS";await save(code,g,s);return {status:g.status,voteableChallengeCount:0};}
   g.status="VOTING";await save(code,g,s);return {status:g.status,voteableChallengeCount:count};
  }
@@ -274,7 +294,7 @@ async function action(a:string,d:any){
  if(a==="finishGame"){
   if(pid!==g.host_player_id)fail("HOST_ONLY","Only the host can finish the game.");
   if((s.reports||[]).some((r:any)=>r.status==="PENDING"))fail("REPORTS_PENDING","The host must review all reported photos before revealing results.");
-  if(g.status==="PLAYING"&&canSkipVoting(s)){g.status="CHALLENGE_RESULTS";await save(code,g,s);return {status:g.status};}
+  if(g.status==="PLAYING"&&canSkipVoting(s)){if(d.reviewConfirmed!==true||JSON.stringify([...(d.reviewedEntryIds||[])].sort())!==JSON.stringify(s.entries.filter((e:any)=>e.status==="SUBMITTED").map((e:any)=>e.entryId).sort()))fail("REVIEW_REQUIRED","Review every remaining photo before starting voting.");g.status="CHALLENGE_RESULTS";await save(code,g,s);return {status:g.status};}
   if(g.status!=="VOTING")fail("INVALID_GAME_STATE","The game can only finish after voting.");if(!allVoted(s))fail("VOTING_NOT_COMPLETE","All players must finish voting first.");
   g.status="CHALLENGE_RESULTS";await save(code,g,s);return {status:g.status};
  }
