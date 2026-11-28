@@ -41,9 +41,10 @@ async function screenPhoto(base64:string){
  }finally{clearTimeout(timer);}
 }
 async function load(code:string){
- const rows=await db("findit_games?game_code=eq."+enc(code)+"&select=game_code,host_player_id,status,challenge_count,ended_early,snapshot,version");
+ const rows=await db("findit_games?game_code=eq."+enc(code)+"&select=game_code,host_player_id,status,challenge_count,ended_early,snapshot,version,last_activity_at");
  if(!rows?.length) fail("GAME_NOT_FOUND","Game "+code+" could not be found.");
  const g=rows[0],s=g.snapshot||{};
+ if(g.status==="CLEANING"||Date.parse(g.last_activity_at)<=Date.now()-86400000)fail("GAME_NOT_FOUND","This game expired after 24 hours without activity. Its photos are being deleted.");
  return {row:g,state:{...s,players:s.players||[],challenges:s.challenges||[],entries:s.entries||[],votes:s.votes||[],reports:s.reports||[]}};
 }
 async function save(code:string,g:any,state:any){
@@ -128,8 +129,31 @@ async function listStoredFiles(prefix:string){
  try{return await collectNestedStoragePaths(async(folder:string,offset:number,limit:number)=>storage("object/list/"+BUCKET,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prefix:folder,limit,offset,sortBy:{column:"name",order:"asc"}})}),prefix,1000);}
  catch(error){console.warn("[FindIt API] Photo listing failed during cleanup",error);fail("PHOTO_LIST_FAILED","Could not confirm the stored photos for this game.");}
 }
+async function deleteGameData(code:string){
+ const paths=await listStoredFiles(code);
+ for(let i=0;i<paths.length;i+=100)await storage("object/"+BUCKET,{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({prefixes:paths.slice(i,i+100)})});
+ if((await listStoredFiles(code)).length)fail("PHOTO_CLEANUP_INCOMPLETE","Some photos remain; cleanup will be retried.");
+ await db("findit_winners?game_code=eq."+enc(code),{method:"DELETE"});
+ await db("findit_games?game_code=eq."+enc(code),{method:"DELETE"});
+ return paths.length;
+}
+async function cleanupExpiredGames(){
+ const cutoff=new Date(Date.now()-86400000).toISOString();
+ const games=await db("findit_games?last_activity_at=lte."+enc(cutoff)+"&select=game_code&order=last_activity_at.asc&limit=20");
+ let cleaned=0,failed=0;
+ for(const game of games){
+  try{
+   const claimed=await db("rpc/findit_claim_expired",{method:"POST",body:JSON.stringify({p_game_code:game.game_code})});
+   if(!claimed)continue;
+   await deleteGameData(game.game_code);cleaned++;
+  }catch(error){failed++;console.error("Expired game cleanup will retry",game.game_code,error);}
+ }
+ return {cleaned,failed};
+}
+
 async function action(a:string,d:any){
- if(a==="health")return {version:"3.0.1",status:"ok",provider:"supabase",selfVoteRule:"half-rounded-down",photoScreening:VISION_API_KEY?"configured":"not-configured"};
+ if(a==="cleanupExpiredGames")return await cleanupExpiredGames();
+ if(a==="health")return {version:"3.0.2",inactivityExpiryHours:24,status:"ok",provider:"supabase",selfVoteRule:"half-rounded-down",photoScreening:VISION_API_KEY?"configured":"not-configured"};
  if(a==="getLatestWinner"){
   const rows=await db("findit_winners?select=game_code,winner_name,record_type,played_at&record_type=eq.OVERALL&order=played_at.desc&limit=1");
   return rows?.length?{hasWinner:true,gameCode:rows[0].game_code,winnerName:rows[0].winner_name,photoUrl:""}:{hasWinner:false};
