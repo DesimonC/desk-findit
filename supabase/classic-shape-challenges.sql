@@ -1,0 +1,1 @@
+INSERT INTO public.findit_challenges(challenge_id,name,description,active) VALUES ('C044','An Object With a Zigzag','Find and photograph an object with a zigzag shape or pattern.',true),('C045','An Object With Curved Shapes','Find and photograph an object with interesting curved shapes.',true) ON CONFLICT (challenge_id) DO NOTHING;
