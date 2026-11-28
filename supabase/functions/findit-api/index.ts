@@ -91,7 +91,7 @@ async function finishAndRecord(code:string,g:any,s:any){
  for(const challenge of result.challengeResults)for(const winner of challenge.winners)rows.push({game_code:code,played_at:playedAt,record_type:"CHALLENGE",challenge_number:challenge.challengeNumber,challenge_name:challenge.name,winner_player_id:winner.playerId,winner_name:winner.name,winning_photo_reference:winner.photoReference,is_joint_winner:challenge.winners.length>1,is_overall_winner:result.overallWinner?.entryId===winner.entryId});
  if(result.overallWinner)rows.push({game_code:code,played_at:playedAt,record_type:"OVERALL",winner_player_id:result.overallWinner.playerId,winner_name:result.overallWinner.name,winning_photo_reference:result.overallWinner.photoReference,challenge_wins:result.challengeWins[result.overallWinner.playerId]||0,is_joint_winner:false,is_overall_winner:true});
  else rows.push({game_code:code,played_at:playedAt,record_type:"NO_WINNER",winner_name:"No winner"});
- if(rows.length)await db("findit_winners",{method:"POST",body:JSON.stringify(rows)});
+ if(rows.length)await db("findit_winners",{method:"POST",body:JSON.stringify(rows.map(row=>({challenge_number:null,challenge_name:null,winner_player_id:null,challenge_wins:null,winning_photo_reference:null,is_joint_winner:false,is_overall_winner:false,...row})))});
  g.status="FINISHED";await save(code,g,s);
  return {gameCode:code,status:"FINISHED",hasWinner:result.hasWinner,overallWinners:result.overallWinners,overallWinner:result.overallWinner,maxChallengeWins:result.maxChallengeWins};
 }
