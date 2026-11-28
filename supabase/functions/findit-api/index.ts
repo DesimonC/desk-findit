@@ -1,4 +1,3 @@
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { canSkipVoting, collectNestedStoragePaths, everyPlayerVoted, everyoneCompletedAllChallenges, findPlayerByName, playerCompletedAllChallenges, voteableChallengeIds } from "./game-logic.mjs";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -130,7 +129,7 @@ async function listStoredFiles(prefix:string){
  catch(error){console.warn("[FindIt API] Photo listing failed during cleanup",error);fail("PHOTO_LIST_FAILED","Could not confirm the stored photos for this game.");}
 }
 async function action(a:string,d:any){
- if(a==="health")return {version:"3.0.0",status:"ok",provider:"supabase",selfVoteRule:"half-rounded-down",photoScreening:VISION_API_KEY?"configured":"not-configured"};
+ if(a==="health")return {version:"3.0.1",status:"ok",provider:"supabase",selfVoteRule:"half-rounded-down",photoScreening:VISION_API_KEY?"configured":"not-configured"};
  if(a==="getLatestWinner"){
   const rows=await db("findit_winners?select=game_code,winner_name,record_type,played_at&record_type=eq.OVERALL&order=played_at.desc&limit=1");
   return rows?.length?{hasWinner:true,gameCode:rows[0].game_code,winnerName:rows[0].winner_name,photoUrl:""}:{hasWinner:false};
@@ -174,7 +173,7 @@ async function action(a:string,d:any){
   if(a==="submitPhoto"){
    const m=String(d.photoData||"").match(/^data:image\/(jpeg|jpg|png|webp);base64,([\s\S]+)$/i);if(!m)fail("PHOTO_REQUIRED","A valid photo is required.");
    const type=m[1].toLowerCase()==="jpg"?"jpeg":m[1].toLowerCase(),bytes=Uint8Array.from(atob(m[2]),x=>x.charCodeAt(0));if(bytes.length>8*1024*1024)fail("PHOTO_TOO_LARGE","Photo is too large. Please take a smaller photo.");
-   await screenPhoto(m[2]);
+   if(VISION_API_KEY)await screenPhoto(m[2]);
    ref=code+"/"+pid+"/"+c.challengeId+"-"+crypto.randomUUID()+".jpg";
    await storage("object/"+BUCKET+"/"+ref,{method:"POST",headers:{"Content-Type":"image/"+type,"x-upsert":"false"},body:bytes});
   }
@@ -191,7 +190,7 @@ async function action(a:string,d:any){
    const round=Number(s.overallVoteRound||1),already=(s.overallVotes||[]).some((v:any)=>v.round===round&&v.voterPlayerId===pid),options=[];
    const entries=(s.overallCandidates||[]).map((id:string)=>s.entries.find((e:any)=>e.entryId===id&&e.status==="SUBMITTED")).filter(Boolean);
    for(let i=0;i<entries.length;i++){const e=entries[i];options.push({optionId:e.entryId,label:"Photo "+(i+1),photoUrl:await photoUrl(e.photoReference),reported:false,reportedByMe:false});}
-   return {complete:already,overallTieBreak:true,round,challenge:{challengeId:"OVERALL",challengeNumber:0,name:"Overall winner tie-break · Round "+round},options};
+   return {complete:already,overallTieBreak:true,round,challenge:{challengeId:"OVERALL",challengeNumber:0,name:"Best photo of the game tie-break · Round "+round},options};
   }
   if(g.status!=="VOTING")fail("INVALID_GAME_STATE","Voting is not active.");const ids=voteable(s),next=s.challenges.find((c:any)=>ids.includes(c.challengeId)&&!s.votes.some((v:any)=>v.voterPlayerId===pid&&v.challengeId===c.challengeId));
   const selfVotesUsed=s.votes.filter((v:any)=>v.voterPlayerId===pid&&v.isSelfVote).length,selfVoteLimit=Math.floor(ids.length/2);
