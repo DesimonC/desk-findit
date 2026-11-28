@@ -45,7 +45,7 @@ async function load(code:string){
  const rows=await db("findit_games?game_code=eq."+enc(code)+"&select=game_code,host_player_id,status,challenge_count,ended_early,snapshot,version");
  if(!rows?.length) fail("GAME_NOT_FOUND","Game "+code+" could not be found.");
  const g=rows[0],s=g.snapshot||{};
- return {row:g,state:{players:s.players||[],challenges:s.challenges||[],entries:s.entries||[],votes:s.votes||[],reports:s.reports||[]}};
+ return {row:g,state:{...s,players:s.players||[],challenges:s.challenges||[],entries:s.entries||[],votes:s.votes||[],reports:s.reports||[]}};
 }
 async function save(code:string,g:any,state:any){
  {
