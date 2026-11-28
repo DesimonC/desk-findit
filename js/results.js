@@ -19,7 +19,7 @@
   if(!data.overallRevealed){
    html='<div class="winner-hero"><p class="eyebrow">CHALLENGE RESULTS</p><h3>Category winners revealed</h3><p>The host will reveal the overall winner separately. If challenge wins are tied, players vote among the tied players’ challenge-winning photos. A tied ballot repeats with only the photos tied in that round.</p></div>';
   }else if(data.overallWinner){
-   html='<div class="winner-hero"><p class="eyebrow">OVERALL WINNER</p><h3>'+escapeHtml(data.overallWinner.name)+'</h3><p>'+data.maxChallengeWins+' challenge win'+(data.maxChallengeWins===1?'':'s')+'</p><figure class="overall-winning-photo"><img src="'+data.overallWinner.photoUrl+'" alt="Overall winning photo"><figcaption>Overall winning photo</figcaption></figure></div>';
+   html='<div class="winner-hero"><p class="eyebrow">OVERALL WINNER</p><h3>'+escapeHtml(data.overallWinner.name)+'</h3><p>'+data.maxChallengeWins+' challenge win'+(data.maxChallengeWins===1?'':'s')+'</p><figure class="overall-winning-photo"><img src="'+data.overallWinner.photoUrl+'" alt="Best photo of the game"><figcaption>Best photo of the game</figcaption></figure></div>';
   }else{
    html='<div class="winner-hero"><p class="eyebrow">GAME COMPLETE</p><h3>No Winner</h3><p>No challenge-winning photo was available for an overall winner.</p></div>';
   }
@@ -29,7 +29,7 @@
   box.innerHTML=html;
   const reveal=document.getElementById("revealOverallWinnerButton");if(reveal){reveal.hidden=!isHost||data.overallRevealed;reveal.disabled=false;}
   if(endButton)endButton.hidden=!data.overallRevealed;
-  FindItApp.showMessage("resultsMessage",data.overallRevealed?(isHost?"Closing the game deletes all stored photos and active game data, including the overall winning photo.":"The host can close the game and delete all stored photos and game data."):(isHost?"Review the category winners, then reveal the overall winner when ready.":"The host will reveal the overall winner after the category results."),false);
+  FindItApp.showMessage("resultsMessage",data.overallRevealed?(isHost?"Closing the game deletes all stored photos and active game data, including the best photo of the game.":"The host can close the game and delete all stored photos and game data."):(isHost?"Review the category winners, then reveal the overall winner when ready.":"The host will reveal the overall winner after the category results."),false);
  }
  async function endGame(){
   const b=document.getElementById("endGameButton");
